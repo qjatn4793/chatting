@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  # MariaDB 서비스
+  mariadb:
+    image: mariadb:latest
+    container_name: mariadb
+    environment:
+      MYSQL_ROOT_PASSWORD: root_password   # 루트 패스워드 설정
+      MYSQL_DATABASE: chat_db              # 기본 데이터베이스 설정
+      MYSQL_USER: admin                     # 데이터베이스 사용자
+      MYSQL_PASSWORD: admin        # 사용자 비밀번호
+    ports:
+      - "3306:3306"  # MariaDB 포트 (호스트:컨테이너 포트)
+    networks:
+      - mynetwork
+    volumes:
+      - mariadb-data:/var/lib/mysql        # 데이터 영속성을 위한 볼륨
+
+  # RabbitMQ 서비스
+  rabbitmq:
+    image: rabbitmq:management
+    container_name: rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: user          # RabbitMQ 기본 사용자
+      RABBITMQ_DEFAULT_PASS: password      # RabbitMQ 기본 비밀번호
+    ports:
+      - "15672:15672"  # RabbitMQ 관리 UI 포트 (호스트:컨테이너 포트)
+      - "5672:5672"    # RabbitMQ AMQP 프로토콜 포트
+    networks:
+      - mynetwork
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq    # RabbitMQ 데이터 영속성을 위한 볼륨
+
+networks:
+  mynetwork:
+    driver: bridge  # 기본 브리지 네트워크
+
+volumes:
+  mariadb-data:
+    driver: local  # MariaDB 데이터를 위한 영속적인 볼륨
+  rabbitmq-data:
+    driver: local  # RabbitMQ 데이터를 위한 영속적인 볼륨
