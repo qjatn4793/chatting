@@ -1,11 +1,10 @@
 plugins {
     id 'java'
-    id 'war'
     id 'org.springframework.boot' version '2.5.6'
     id 'io.spring.dependency-management' version '1.0.11.RELEASE'
 }
 
-group = 'com.example'
+group = 'com.realtime'
 version = '0.0.1-SNAPSHOT'
 sourceCompatibility = '1.8'
 
@@ -27,6 +26,9 @@ dependencies {
     implementation 'io.jsonwebtoken:jjwt-impl:0.11.2'
     implementation 'io.jsonwebtoken:jjwt-jackson:0.11.2'
 
+    // Spring Security 의존성 추가
+    implementation 'org.springframework.boot:spring-boot-starter-security'
+
     // WebSocket & STOMP 지원
     implementation 'org.springframework.boot:spring-boot-starter-websocket'  // WebSocket 지원
     implementation 'org.springframework:spring-messaging'  // STOMP 지원
@@ -37,6 +39,9 @@ dependencies {
     // JPA 사용
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa' // JPA 사용
     runtimeOnly 'org.mariadb.jdbc:mariadb-java-client:3.1.3'  // MariaDB JDBC 드라이버
+
+    // 개발 중 자동 리로딩을 위한 의존성
+    developmentOnly 'org.springframework.boot:spring-boot-devtools'
 }
 
 tasks.named('test') {

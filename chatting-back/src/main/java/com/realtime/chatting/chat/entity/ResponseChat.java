@@ -1,4 +1,4 @@
-package com.realtime.chatting.entity;
+package com.realtime.chatting.chat.entity;
 
 import lombok.AllArgsConstructor;
 import lombok.Getter;

@@ -1,4 +1,4 @@
-package com.realtime.chatting.listener;
+package com.realtime.chatting.chat.listener;
 
 import org.springframework.amqp.core.Message;
 import org.springframework.amqp.core.MessageListener;

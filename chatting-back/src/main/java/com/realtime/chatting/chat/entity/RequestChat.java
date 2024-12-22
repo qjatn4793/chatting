@@ -1,4 +1,4 @@
-package com.realtime.chatting.entity;
+package com.realtime.chatting.chat.entity;
 
 import javax.persistence.Entity;
 import javax.persistence.GeneratedValue;
@@ -16,6 +16,8 @@ import lombok.Setter;
 @Getter
 @Setter
 public class RequestChat {
+	
+	private static final long serialVersionUID = 1L; // 직렬화에 필요한 ID
 	
 	@Id
     @GeneratedValue(strategy = GenerationType.IDENTITY) // 자동 증가 방식
