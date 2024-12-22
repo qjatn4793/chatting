@@ -18,6 +18,8 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void registerStompEndpoints(org.springframework.web.socket.config.annotation.StompEndpointRegistry registry) {
-        registry.addEndpoint("/chat").withSockJS();  // 클라이언트에서 /chat으로 WebSocket 연결
+        registry.addEndpoint("/chat")
+        .setAllowedOrigins("http://localhost:3000") // React 클라이언트 URL 추가
+        .withSockJS();;  // 클라이언트에서 /chat으로 WebSocket 연결
     }
 }

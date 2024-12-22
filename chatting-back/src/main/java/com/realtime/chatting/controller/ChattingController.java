@@ -21,6 +21,8 @@ public class ChattingController {
 	
 	@PostMapping("/api/chat/send")
     public void sendMessage(@RequestBody RequestChat requestChat) {
+        log.info("Sending message: " + requestChat.getMessage());
+        
         // 메시지를 RabbitMQ 큐로 전송 (기본적으로 'chatQueue' 큐로 전송)
         rabbitTemplate.convertAndSend("chatExchange", "chat.message", requestChat.getMessage());
     }
