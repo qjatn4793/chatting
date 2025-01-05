@@ -1,5 +1,7 @@
 package com.realtime.chatting.chat.entity;
 
+import java.util.Date;
+
 import javax.persistence.Entity;
 import javax.persistence.GeneratedValue;
 import javax.persistence.GenerationType;
@@ -25,4 +27,5 @@ public class RequestChat {
 	
 	private String message;
 	private String sender;
+	private Date timestamp;
 }

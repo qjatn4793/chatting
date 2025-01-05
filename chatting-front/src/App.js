@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import AuthForm from './AuthForm';
-import ChatApp from './ChatApp'; // 기존의 채팅 앱 컴포넌트
+import AuthForm from './pages/login/AuthForm';
+import ChatApp from './pages/chat/ChatApp'; // 기존의 채팅 앱 컴포넌트
 import axios from 'axios';
+import './styles/App.css';
 
 const App = () => {
   const [jwtToken, setJwtToken] = useState(localStorage.getItem('jwtToken'));
@@ -61,17 +62,14 @@ const App = () => {
     <div>
       {jwtToken ? (
         <div>
-          <button onClick={handleLogout} style={{ float: 'right', margin: '10px' }}>
-            Logout
-          </button>
-          <ChatApp jwtToken={jwtToken} />
+          <ChatApp jwtToken={jwtToken} onLogout={handleLogout} /> {/* Pass handleLogout as onLogout */}
           {isLoading && <p>Loading protected data...</p>}
-          {protectedData && (
+          {/* {protectedData && (
             <div>
               <h2>Protected Data:</h2>
               <pre>{JSON.stringify(protectedData, null, 2)}</pre>
             </div>
-          )}
+          )} */}
           {errorMessage && <p style={{ color: 'red' }}>{errorMessage}</p>}
         </div>
       ) : (
