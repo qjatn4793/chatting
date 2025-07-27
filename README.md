@@ -65,8 +65,8 @@ JWT 기반 인증과 WebSocket(STOMP)을 사용하여 실시간 메시징을 구
 
 ### Backend
 1. **환경 설정**
-   - `chatting-back/src/main/resources/application.properties`에서 데이터베이스 및 RabbitMQ 설정 확인
-   - 기본 포트: `http://localhost:8080`
+   - chatting-back/src/main/resources/application.properties에서 데이터베이스 및 RabbitMQ 설정 확인
+   - 기본 포트: http://localhost:8080
 
 2. **실행**
    cd chatting-back
