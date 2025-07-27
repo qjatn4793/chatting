@@ -96,9 +96,33 @@ JWT 기반 인증과 WebSocket(STOMP)을 사용하여 실시간 메시징을 구
 
 ### 📂 프로젝트 구조
   ### Frontend (`chatting-front`)
-  chatting-front/ ├── public/ # 정적 파일 (HTML, manifest 등) ├── src/ │ ├── components/ # 재사용 가능한 컴포넌트 │ ├── context/ # AuthContext (JWT 관리) │ ├── pages/ # 페이지 컴포넌트 (로그인, 채팅) │ ├── styles/ # CSS 스타일 파일 │ ├── App.js # 메인 애플리케이션 컴포넌트 │ └── index.js # React 진입점 ├── .env # 환경 변수 설정 └── package.json # 프로젝트 의존성 및 스크립트
+   ```chatting-front/
+   ├── public/                # 정적 파일 (HTML, manifest 등)
+   ├── src/
+   │   ├── components/        # 재사용 가능한 컴포넌트
+   │   ├── context/           # AuthContext (JWT 관리)
+   │   ├── pages/             # 페이지 컴포넌트 (로그인, 채팅)
+   │   ├── styles/            # CSS 스타일 파일
+   │   ├── App.js             # 메인 애플리케이션 컴포넌트
+   │   └── index.js           # React 진입점
+   ├── .env                   # 환경 변수 설정
+   └── package.json           # 프로젝트 의존성 및 스크립트```
   ### Backend (`chatting-back`)
-  chatting-back/ ├── src/ │ ├── main/ │ │ ├── java/com/realtime/chatting/ │ │ │ ├── config/ # 설정 파일 (WebSocket, JWT, RabbitMQ 등) │ │ │ ├── login/ # 로그인 관련 엔티티, 레포지토리, 컨트롤러 │ │ │ ├── chat/ # 채팅 관련 엔티티, 서비스, 컨트롤러 │ │ │ └── ChattingApplication.java # Spring Boot 진입점 │ │ └── resources/ │ │ ├── application.properties # 환경 설정 파일 │ │ └── static/ # 정적 리소스 │ └── test/ # 테스트 코드 ├── build.gradle # Gradle 빌드 설정 ├── settings.gradle # Gradle 프로젝트 설정 └── docker/ # Docker Compose 설정
+   ```chatting-back/
+   ├── src/
+   │   ├── main/
+   │   │   ├── java/com/realtime/chatting/
+   │   │   │   ├── config/               # 설정 파일 (WebSocket, JWT, RabbitMQ 등)
+   │   │   │   ├── login/                # 로그인 관련 엔티티, 레포지토리, 컨트롤러
+   │   │   │   ├── chat/                 # 채팅 관련 엔티티, 서비스, 컨트롤러
+   │   │   │   └── ChattingApplication.java # Spring Boot 진입점
+   │   │   └── resources/
+   │   │       ├── application.properties # 환경 설정 파일
+   │   │       └── static/               # 정적 리소스
+   │   └── test/                         # 테스트 코드
+   ├── build.gradle                      # Gradle 빌드 설정
+   ├── settings.gradle                   # Gradle 프로젝트 설정
+   └── docker/                           # Docker Compose 설정```
 
 ### 🛠️ 빌드 및 배포
   Frontend
