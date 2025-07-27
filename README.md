@@ -69,30 +69,30 @@ JWT 기반 인증과 WebSocket(STOMP)을 사용하여 실시간 메시징을 구
    - 기본 포트: http://localhost:8080
 
 2. **실행**
-   cd chatting-back
-   ./gradlew bootRun
+   - cd chatting-back
+   - ./gradlew bootRun
 3. **Docker Compose 사용 (선택)**
-   chatting-back/docker/docker-compose.yml 파일을 사용하여 MariaDB와 RabbitMQ를 실행할 수 있습니다.
-   cd chatting-back/docker
-   docker-compose up
+   - chatting-back/docker/docker-compose.yml 파일을 사용하여 MariaDB와 RabbitMQ를 실행할 수 있습니다.
+   - cd chatting-back/docker
+   - docker-compose up
 
 ### Frontend
 1. **환경 설정**
    - chatting-front/.env 파일 생성 후 아래와 같이 설정:
-     REACT_APP_CHATTING_SERVER=http://localhost:8080
+   - REACT_APP_CHATTING_SERVER=http://localhost:8080
 
 2. **실행**
-   cd chatting-front
-   npm install
-   npm start
+   - cd chatting-front
+   - npm install
+   - npm start
 3. **기본 포트**
-   http://localhost:3000
+   - http://localhost:3000
 
 ### 🔒 인증 흐름
-  사용자가 로그인 또는 회원가입 시 JWT 발급
-  React의 AuthContext를 통해 JWT를 전역 관리
-  Axios 요청 시<vscode_annotation details='%5B%7B%22title%22%3A%22hardcoded-credentials%22%2C%22description%22%3A%22Embedding%20credentials%20in%20source%20code%20risks%20unauthorized%20access%22%7D%5D'> </vscode_annotation>Authorization: Bearer <토큰> 헤더 추가
-  토큰 만료 시 자동 로그아웃 처리
+  - 사용자가 로그인 또는 회원가입 시 JWT 발급
+  - React의 AuthContext를 통해 JWT를 전역 관리
+  - Axios 요청 시<vscode_annotation details='%5B%7B%22title%22%3A%22hardcoded-credentials%22%2C%22description%22%3A%22Embedding%20credentials%20in%20source%20code%20risks%20unauthorized%20access%22%7D%5D'> </vscode_annotation>Authorization: Bearer <토큰> 헤더 추가
+  - 토큰 만료 시 자동 로그아웃 처리
 
 ### 📂 프로젝트 구조
   ### Frontend (`chatting-front`)
