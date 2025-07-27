@@ -3,8 +3,9 @@
   text-align: center;
   font-family: 'Arial', sans-serif; /* 폰트 변경 */
   background-color: #f7f7f7; /* 밝은 배경색 */
-  min-height: 100vh;
   margin: 0;
+  height: calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  overflow: hidden; /* 스크롤 방지 */
 }
 
 /* 로고 스타일 */
@@ -87,7 +88,6 @@ button {
   border-radius: 5px;
   cursor: pointer;
   font-size: 1.2em;
-  margin-top: 10px;
 }
 
 button:hover {

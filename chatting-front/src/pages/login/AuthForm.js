@@ -10,9 +10,15 @@ const AuthForm = ({ onLogin }) => {
 
   const handleSubmit = (e) => {
     e.preventDefault();
+
+    if (!username || !password) {
+      setErrorMessage('Please fill in both fields.');
+      return;
+    }
+
     const url = isRegistering
-      ? `${process.env.REACT_APP_CHATTING_SERVER}/api/auth/register`
-      : `${process.env.REACT_APP_CHATTING_SERVER}/api/auth/login`;
+      ? `${process.env.REACT_APP_CHATTING_SERVER || 'http://localhost:5000'}/api/auth/register`
+      : `${process.env.REACT_APP_CHATTING_SERVER || 'http://localhost:5000'}/api/auth/login`;
 
     const data = { username, password };
 
@@ -24,18 +30,16 @@ const AuthForm = ({ onLogin }) => {
       })
       .then((response) => {
         if (isRegistering) {
-          // 회원가입 성공 후 처리
           if (response.data === 'User registered successfully') {
             alert('Registration successful, you can now log in!');
-            setIsRegistering(false); // 회원가입 후 로그인 폼으로 변경
+            setIsRegistering(false);
           } else {
             setErrorMessage('Registration failed. Please try again.');
           }
         } else {
-          // 로그인 성공 후 처리
-          if (response.data) { // 응답에서 토큰이 있는지 확인
-            localStorage.setItem('jwtToken', response.data); // JWT 토큰 저장
-            onLogin(response.data); // 로그인 성공 후 상위 컴포넌트로 토큰 전달
+          if (response.data && typeof response.data === 'string') {
+            localStorage.setItem('jwtToken', response.data);
+            onLogin(response.data);
           } else {
             setErrorMessage('Invalid credentials. Please try again.');
           }
