@@ -20,6 +20,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     public void registerStompEndpoints(StompEndpointRegistry registry) {
         registry.addEndpoint("/chat")
         .setAllowedOrigins("http://222.99.202.20:3000") // React 클라이언트 URL 추가
+        .setAllowedOrigins("http://localhost:3000") // React 클라이언트 URL 추가
         .withSockJS();;  // 클라이언트에서 /chat으로 WebSocket 연결
     }
 }
