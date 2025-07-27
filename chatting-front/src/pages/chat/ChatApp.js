@@ -32,7 +32,9 @@ const ChatApp = () => {
           '';
 
         setUserId(idFromToken);
-        sendSystemMessage(`${idFromToken}님이 채팅방에 입장했습니다.`);
+        setTimeout(() => {
+          sendSystemMessage(`${idFromToken}님이 채팅방에 입장했습니다.`);
+        }, 1000);
       } catch (e) {
         console.error('JWT 디코드 실패:', e);
         logout();
@@ -68,7 +70,9 @@ const ChatApp = () => {
     if (isConnected) return;
     if (!jwtToken) return console.error('No token');
 
-    const socket = new SockJS(`${process.env.REACT_APP_CHATTING_SERVER}/chat`);
+    const socket = new SockJS(`${process.env.REACT_APP_CHATTING_SERVER}/chat`, null, {
+      transports: ['websocket', 'xhr-streaming', 'xhr-polling'], // jsonp-polling 제거
+    });
     const client = Stomp.over(socket);
     client.heartbeat.outgoing = 1000;
     client.heartbeat.incoming = 0;
@@ -90,7 +94,6 @@ const ChatApp = () => {
               console.error('Parse error', e);
             }
           });
-          //sendSystemMessage(`${userId}님이 채팅방에 입장했습니다.`);
           setIsLoading(false);
         },
         (err) => {
