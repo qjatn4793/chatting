@@ -128,9 +128,11 @@ JWT 기반 인증과 WebSocket(STOMP)을 사용하여 실시간 메시징을 구
    └── docker/                           # Docker Compose 설정
    ```
 ### 🛠️ 빌드 및 배포
+```
   Frontend
     cd chatting-front
     npm run build
   Backend
     cd chatting-back
     ./gradlew build
+```
