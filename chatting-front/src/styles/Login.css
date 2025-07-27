@@ -15,6 +15,7 @@
     justify-content: center; /* 세로 방향으로 중앙 정렬 */
     align-items: center; /* 가로 방향으로 중앙 정렬 */
     overflow: hidden;
+    max-width: 550px;
 }
 
 /* 로그인 및 회원가입 폼 제목 */
