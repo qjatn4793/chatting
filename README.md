@@ -96,7 +96,8 @@ JWT 기반 인증과 WebSocket(STOMP)을 사용하여 실시간 메시징을 구
 
 ### 📂 프로젝트 구조
   ### Frontend (`chatting-front`)
-   ```chatting-front/
+   ```
+   chatting-front/
    ├── public/                # 정적 파일 (HTML, manifest 등)
    ├── src/
    │   ├── components/        # 재사용 가능한 컴포넌트
@@ -107,8 +108,10 @@ JWT 기반 인증과 WebSocket(STOMP)을 사용하여 실시간 메시징을 구
    │   └── index.js           # React 진입점
    ├── .env                   # 환경 변수 설정
    └── package.json           # 프로젝트 의존성 및 스크립트
+   ```
   ### Backend (`chatting-back`)
-   ```chatting-back/
+   ```
+   chatting-back/
    ├── src/
    │   ├── main/
    │   │   ├── java/com/realtime/chatting/
@@ -123,7 +126,7 @@ JWT 기반 인증과 WebSocket(STOMP)을 사용하여 실시간 메시징을 구
    ├── build.gradle                      # Gradle 빌드 설정
    ├── settings.gradle                   # Gradle 프로젝트 설정
    └── docker/                           # Docker Compose 설정
-
+   ```
 ### 🛠️ 빌드 및 배포
   Frontend
     cd chatting-front
