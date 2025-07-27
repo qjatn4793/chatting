@@ -28,25 +28,6 @@ REST API, WebSocket
 메시지 자동 스크롤
 세션 만료 시 자동 로그아웃
 
-# 📁 프로젝트 구조
-
-/backend      # Spring Boot 애플리케이션
-  ├─ src/main/java/com/realtime/chatting   # 도메인, 컨트롤러, 서비스
-  ├─ src/main/resources
-  │   ├─ application.yml     # 환경 설정
-  │   └─ static
-  └─ build.gradle           # Gradle 설정
-
-/frontend     # React 애플리케이션
-  ├─ src
-  │   ├─ context/AuthContext.js
-  │   ├─ pages/login/AuthForm.js
-  │   ├─ pages/chat/ChatApp.js
-  │   ├─ App.js
-  │   └─ index.js
-  ├─ public
-  └─ package.json
-
 # ⚙️ 개발 환경 설정
 공통
 Node.js >= 16.17.0
