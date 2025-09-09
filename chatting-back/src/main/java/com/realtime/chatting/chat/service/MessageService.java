@@ -1,0 +1,38 @@
+package com.realtime.chatting.chat.service;
+
+import java.time.Instant;
+import java.util.List;
+import java.util.stream.Collectors;
+
+import org.springframework.data.domain.PageRequest;
+import org.springframework.stereotype.Service;
+
+import com.realtime.chatting.chat.dto.MessageDto;
+import com.realtime.chatting.chat.entity.ChatMessage;
+import com.realtime.chatting.chat.repository.ChatMessageRepository;
+
+import lombok.RequiredArgsConstructor;
+
+@Service
+@RequiredArgsConstructor
+public class MessageService {
+    private final ChatMessageRepository messageRepo;
+
+    public List<MessageDto> history(String roomId, int limit) {
+        return messageRepo.findByRoomIdOrderByCreatedAtDesc(roomId, PageRequest.of(0, limit)).stream()
+            .sorted((a,b) -> a.getCreatedAt().compareTo(b.getCreatedAt()))
+            .map(m -> MessageDto.builder()
+                .id(m.getId()).roomId(m.getRoomId()).sender(m.getSender()).content(m.getContent()).createdAt(m.getCreatedAt())
+                .build())
+            .collect(Collectors.toList());
+    }
+
+    public MessageDto save(String roomId, String sender, String content) {
+        ChatMessage m = ChatMessage.builder()
+            .roomId(roomId).sender(sender).content(content).createdAt(Instant.now())
+            .build();
+        m = messageRepo.save(m);
+        return MessageDto.builder()
+            .id(m.getId()).roomId(roomId).sender(sender).content(content).createdAt(m.getCreatedAt()).build();
+    }
+}

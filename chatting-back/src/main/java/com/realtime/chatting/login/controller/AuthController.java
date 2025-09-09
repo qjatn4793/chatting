@@ -2,6 +2,8 @@ package com.realtime.chatting.login.controller;
 
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.SignatureAlgorithm;
+import io.jsonwebtoken.security.Keys;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
@@ -12,10 +14,17 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.realtime.chatting.login.dto.LoginRequest;
+import com.realtime.chatting.login.dto.LoginResponse;
+import com.realtime.chatting.login.dto.RegisterRequest;
 import com.realtime.chatting.login.entity.User;
 import com.realtime.chatting.login.repository.UserRepository;
 
+import java.nio.charset.StandardCharsets;
+import java.security.Key;
+import java.time.Instant;
 import java.util.Date;
+import java.util.Optional;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -25,42 +34,53 @@ public class AuthController {
     private final UserRepository userRepository;
     private final BCryptPasswordEncoder passwordEncoder;
 
-    // @Value 어노테이션을 사용하여 JWT 비밀 키를 읽어옵니다.
     @Value("${jwt.secret}")
-    private String secretKey;
+    private String secret;  // 최소 32바이트 이상 권장 (HS256)
 
-    // 회원가입 API
-    @PostMapping("/register")
-    public ResponseEntity<String> register(@RequestBody User user) {
-        if (userRepository.findByUsername(user.getUsername()) != null) {
-            return new ResponseEntity<>("Username is already taken", HttpStatus.BAD_REQUEST);
-        }
+    @Value("${jwt.expiration-ms:3600000}")
+    private long expirationMs;
 
-        user.setPassword(passwordEncoder.encode(user.getPassword())); // 비밀번호 해싱
-        userRepository.save(user);
-        return new ResponseEntity<>("User registered successfully", HttpStatus.CREATED);
+    private Key key() {
+        // JJWT 0.11+: 키 객체 생성
+        byte[] bytes = secret.getBytes(StandardCharsets.UTF_8);
+        return Keys.hmacShaKeyFor(bytes);
     }
 
-    // 로그인 API
-    @PostMapping("/login")
-    public ResponseEntity<String> login(@RequestBody User user) {
-        User foundUser = userRepository.findByUsername(user.getUsername());
-
-        // 사용자 이름과 비밀번호 확인
-        if (foundUser != null && passwordEncoder.matches(user.getPassword(), foundUser.getPassword())) {
-            // JWT 토큰에 만료 시간을 1시간으로 설정
-            String token = Jwts.builder()
-                    .setSubject(user.getUsername()) // 사용자 이름을 주제로 설정
-                    .setExpiration(new Date(System.currentTimeMillis() + 3600000)) // 1시간 후 만료
-                    .setIssuedAt(new Date()) // 토큰 발행 시간을 현재 시간으로 설정
-                    .signWith(SignatureAlgorithm.HS256, secretKey)  // @Value로 읽어온 secretKey 사용
-                    .compact();
-
-            // 토큰을 성공적으로 생성하여 반환
-            return ResponseEntity.ok(token);
-        } else {
-            // 사용자 인증 실패 시
-            return new ResponseEntity<>("Invalid credentials", HttpStatus.UNAUTHORIZED);
+    @PostMapping("/register")
+    public ResponseEntity<?> register(@Valid @RequestBody RegisterRequest req) {
+        // Optional API 사용
+        Optional<User> existing = userRepository.findByUsername(req.username());
+        if (existing.isPresent()) {
+            // 409가语의적으로 더 맞음(중복)
+            return ResponseEntity.status(HttpStatus.CONFLICT).body("Username is already taken");
         }
+
+        User u = new User();
+        u.setUsername(req.username());
+        u.setPassword(passwordEncoder.encode(req.password()));
+        userRepository.save(u);
+        return ResponseEntity.status(HttpStatus.CREATED).build();
+    }
+
+    @PostMapping("/login")
+    public ResponseEntity<?> login(@Valid @RequestBody LoginRequest req) {
+        Optional<User> found = userRepository.findByUsername(req.username());
+        if (found.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Invalid credentials");
+        }
+        User user = found.get();
+        if (!passwordEncoder.matches(req.password(), user.getPassword())) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Invalid credentials");
+        }
+
+        Instant now = Instant.now();
+        String token = Jwts.builder()
+                .setSubject(user.getUsername())
+                .setIssuedAt(Date.from(now))
+                .setExpiration(Date.from(now.plusMillis(expirationMs)))
+                .signWith(key(), SignatureAlgorithm.HS256)
+                .compact();
+
+        return ResponseEntity.ok(new LoginResponse(token, expirationMs));
     }
 }
