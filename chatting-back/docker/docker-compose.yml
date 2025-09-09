@@ -4,14 +4,14 @@ services:
   # MariaDB 서비스
   mariadb:
     image: mariadb:latest
-    container_name: mariadb
+    container_name: toy-mariadb
     environment:
       MYSQL_ROOT_PASSWORD: root_password   # 루트 패스워드 설정
       MYSQL_DATABASE: chat_db              # 기본 데이터베이스 설정
       MYSQL_USER: admin                     # 데이터베이스 사용자
       MYSQL_PASSWORD: admin        # 사용자 비밀번호
     ports:
-      - "3306:3306"  # MariaDB 포트 (호스트:컨테이너 포트)
+      - "33306:3306"  # MariaDB 포트 (호스트:컨테이너 포트)
     networks:
       - mynetwork
     volumes:
@@ -20,13 +20,13 @@ services:
   # RabbitMQ 서비스
   rabbitmq:
     image: rabbitmq:management
-    container_name: rabbitmq
+    container_name: toy-rabbitmq
     environment:
       RABBITMQ_DEFAULT_USER: user          # RabbitMQ 기본 사용자
       RABBITMQ_DEFAULT_PASS: password      # RabbitMQ 기본 비밀번호
     ports:
-      - "15672:15672"  # RabbitMQ 관리 UI 포트 (호스트:컨테이너 포트)
-      - "5672:5672"    # RabbitMQ AMQP 프로토콜 포트
+      - "25672:15672"  # RabbitMQ 관리 UI 포트 (호스트:컨테이너 포트)
+      - "6672:5672"    # RabbitMQ AMQP 프로토콜 포트
     networks:
       - mynetwork
     volumes:

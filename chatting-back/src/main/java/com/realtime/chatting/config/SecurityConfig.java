@@ -46,7 +46,7 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(Arrays.asList("http://121.135.111.129:3000"));  // 허용할 origin
+        configuration.setAllowedOrigins(Arrays.asList("http://localhost:3000"));  // 허용할 origin
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));  // 허용할 HTTP 메소드
         configuration.setAllowedHeaders(Collections.singletonList("*"));  // 모든 헤더 허용
         configuration.setAllowCredentials(true);  // 자격 증명(쿠키, 인증 헤더 등) 허용

@@ -2,6 +2,9 @@
   "name": "chatting-front",
   "version": "0.1.0",
   "private": true,
+  "main": "electron.js",
+  "description": "Desktop Chatting App",
+  "author": "kbs",
   "dependencies": {
     "@stomp/stompjs": "^7.0.0",
     "axios": "^1.7.9",
@@ -20,7 +23,29 @@
     "start": "react-scripts start",
     "build": "react-scripts build",
     "test": "react-scripts test",
-    "eject": "react-scripts eject"
+    "eject": "react-scripts eject",
+    "electron-dev": "concurrently \"npm run start\" \"wait-on http://localhost:3000 && ELECTRON_START_URL=http://localhost:3000 electron .\"",
+    "electron-pack": "npm run build && electron-builder"
+  },
+  "build": {
+    "appId": "com.chatting.app",
+    "productName": "ChattingApp",
+    "files": [
+      "build/**/*",
+      "electron.js"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "mac": {
+      "publish": null
+    },
+    "linux": {
+      "publish": null
+    }
   },
   "eslintConfig": {
     "extends": [
@@ -39,5 +64,10 @@
       "last 1 firefox version",
       "last 1 safari version"
     ]
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "electron": "^28.3.3",
+    "electron-builder": "^26.0.12"
   }
 }
