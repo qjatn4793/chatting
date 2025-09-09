@@ -1,59 +1,67 @@
 package com.realtime.chatting.config;
 
-import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.SignatureAlgorithm;
+import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.Jws;
+import io.jsonwebtoken.JwtException;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-
+import org.springframework.http.HttpHeaders;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
+import com.realtime.chatting.login.service.JwtService;
+
 import java.io.IOException;
+import java.util.List;
 
 @Component
+@RequiredArgsConstructor
 @Slf4j
 public class JWTAuthenticationFilter extends OncePerRequestFilter {
 
-    private final JwtConfig jwtConfig;  // JwtConfig를 사용하여 secretKey를 주입받음
+    private static final String BEARER = "Bearer ";
+    private final JwtService jwtService;
 
-    // 생성자 주입 방식으로 JwtConfig 주입
-    public JWTAuthenticationFilter(JwtConfig jwtConfig) {
-        this.jwtConfig = jwtConfig;
+    /** 인증이 필요 없는 경로는 필터를 아예 건너뜁니다. */
+    @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) {
+        String p = request.getServletPath();
+        return p.startsWith("/api/auth/")   // 로그인/회원가입
+            || p.startsWith("/chat/")       // SockJS 엔드포인트 등
+            || "OPTIONS".equalsIgnoreCase(request.getMethod()); // CORS preflight
     }
 
     @Override
-    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
+    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
 
-        String token = request.getHeader("Authorization");
+        String header = request.getHeader(HttpHeaders.AUTHORIZATION);
 
-        if (token != null && token.startsWith("Bearer ")) {
-            token = token.substring(7);  // "Bearer " 부분을 제거하여 실제 JWT 토큰만 남김
+        if (header != null && header.startsWith(BEARER)) {
+            String token = header.substring(BEARER.length());
 
             try {
-                String username = Jwts.parserBuilder()
-                        .setSigningKey(jwtConfig.getSecret())  // JwtConfig에서 secretKey를 가져옴
-                        .build()
-                        .parseClaimsJws(token)
-                        .getBody()
-                        .getSubject();
+                Jws<Claims> jws = jwtService.parse(token);
+                String username = jws.getBody().getSubject();
 
-                if (username != null) {
-                    UsernamePasswordAuthenticationToken authentication =
-                            new UsernamePasswordAuthenticationToken(username, null, null);
-                    SecurityContextHolder.getContext().setAuthentication(authentication);
+                if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
+                    // 권한이 필요하면 jws.getBody().get("roles")에서 꺼내 매핑하세요.
+                    UsernamePasswordAuthenticationToken auth =
+                            new UsernamePasswordAuthenticationToken(username, null, List.of());
+                    SecurityContextHolder.getContext().setAuthentication(auth);
                 }
-            } catch (Exception e) {
-                log.error("JWT token is invalid or expired.", e);
+            } catch (JwtException e) {
+                // 서명 불일치/만료/형식 오류 등
+                log.error("JWT token is invalid or expired: {}", e.getMessage());
             }
         }
 
-        filterChain.doFilter(request, response);
+        chain.doFilter(request, response);
     }
 }

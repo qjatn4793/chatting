@@ -24,18 +24,17 @@ public class JwtService {
 
     public JwtService(
             @Value("${jwt.secret}") String secret,
-            // secret이 Base64로 저장돼 있다면 true로 (권장: Base64로 관리)
             @Value("${jwt.secret-base64:true}") boolean secretIsBase64,
             @Value("${jwt.expiration-ms:3600000}") long expirationMs
     ) {
         byte[] keyBytes = secretIsBase64
                 ? Decoders.BASE64.decode(secret)
                 : secret.getBytes(StandardCharsets.UTF_8);
-        this.key = Keys.hmacShaKeyFor(keyBytes); // HS256/384/512 모두 OK (키 길이에 따라)
+        this.key = Keys.hmacShaKeyFor(keyBytes);
         this.expirationMs = expirationMs;
     }
 
-    public String generate(String subject) {
+    public String issue(String subject) {
         Instant now = Instant.now();
         return Jwts.builder()
                 .setSubject(subject)
@@ -46,9 +45,8 @@ public class JwtService {
     }
 
     public Jws<Claims> parse(String token) throws JwtException {
-        return Jwts.parserBuilder()
-                .setSigningKey(key)
-                .build()
-                .parseClaimsJws(token);
+        return Jwts.parserBuilder().setSigningKey(key).build().parseClaimsJws(token);
     }
+
+    public long getExpirationMs() { return expirationMs; }
 }
