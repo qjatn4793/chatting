@@ -1,6 +1,8 @@
 package com.realtime.chatting.chat.controller;
 
 import java.util.List;
+
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
@@ -19,28 +21,34 @@ public class RoomsController {
 
     private final RoomService roomService;
     private final MessageService messageService;
-    private final org.springframework.amqp.rabbit.core.RabbitTemplate rabbitTemplate;
+    private final RabbitTemplate rabbitTemplate;
 
     @GetMapping
     public List<RoomDto> myRooms(Authentication auth) {
-        return roomService.myRooms((String) auth.getPrincipal());
+        return roomService.myRooms(auth.getName());
     }
 
     @PostMapping("/dm/{friendUsername}")
-    public RoomDto openDm(@PathVariable String friendUsername, Authentication auth) {
-        String me = (String) auth.getPrincipal();
+    public RoomDto openDm(@PathVariable("friendUsername") String friendUsername,
+                          Authentication auth) {
+        String me = auth.getName();
         return roomService.openDm(me, friendUsername);
     }
 
     @GetMapping("/{roomId}/messages")
-    public List<MessageDto> history(@PathVariable String roomId, @RequestParam(defaultValue = "50") int limit) {
-        return messageService.history(roomId, Math.min(200, Math.max(1, limit)));
+    public List<MessageDto> history(@PathVariable("roomId") String roomId,
+                                    @RequestParam(name = "limit", defaultValue = "50") int limit) {
+        int capped = Math.min(200, Math.max(1, limit));
+        return messageService.history(roomId, capped);
     }
 
     @PostMapping("/{roomId}/send")
-    public void send(@PathVariable String roomId, @RequestBody SendMessageRequest req, Authentication auth) {
-        String sender = (String) auth.getPrincipal();
+    public MessageDto send(@PathVariable("roomId") String roomId,
+                           @RequestBody SendMessageRequest req,
+                           Authentication auth) {
+        String sender = auth.getName();
         MessageDto saved = messageService.save(roomId, sender, req.getMessage());
         rabbitTemplate.convertAndSend("chatExchange", "chat.message", saved);
+        return saved; // 클라이언트가 즉시 에코 받도록 반환
     }
 }
