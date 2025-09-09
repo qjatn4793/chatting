@@ -20,51 +20,35 @@ import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.amqp.core.BindingBuilder;
 
 @Configuration
+@EnableRabbit
 public class RabbitConfig {
+    public static final String EXCHANGE_NAME = "chatExchange";
+    public static final String ROUTING_KEY = "chat.message";
+    public static final String QUEUE_NAME = "chatQueue";
 
-	public static final String QUEUE_NAME = "chatQueue";
-	
-    // 큐 정의
-    @Bean
-    public Queue queue() {
-        return new Queue("chatQueue", false);  // 큐 이름: "chatQueue"
+    @Bean TopicExchange chatExchange() { return new TopicExchange(EXCHANGE_NAME, true, false); }
+    @Bean Queue chatQueue() { return new Queue(QUEUE_NAME, true); }
+    @Bean Binding chatBinding(Queue q, TopicExchange ex) { return BindingBuilder.bind(q).to(ex).with(ROUTING_KEY); }
+    @Bean MessageConverter messageConverter() { return new Jackson2JsonMessageConverter(); }
+
+    @Bean RabbitTemplate rabbitTemplate(ConnectionFactory cf, MessageConverter mc) {
+        RabbitTemplate t = new RabbitTemplate(cf);
+        t.setMessageConverter(mc);
+        return t;
     }
 
-    // Exchange 정의 (Topic Exchange)
-    @Bean
-    public TopicExchange exchange() {
-        return new TopicExchange("chatExchange");  // Exchange 이름
+    @Bean SimpleMessageListenerContainer container(ConnectionFactory cf, MessageListenerAdapter adapter) {
+        SimpleMessageListenerContainer c = new SimpleMessageListenerContainer(cf);
+        c.setQueueNames(QUEUE_NAME);
+        c.setMessageListener(adapter);
+        c.setConcurrentConsumers(2);
+        c.setMaxConcurrentConsumers(10);
+        return c;
     }
 
-    // Queue와 Exchange 바인딩
-    @Bean
-    public Binding binding(Queue queue, TopicExchange exchange) {
-        return BindingBuilder.bind(queue).to(exchange).with("chat.message");  // 메시지 라우팅 키
-    }
-    
-    // 메시지 변환기 (JSON 변환기 사용)
-    @Bean
-    public MessageConverter messageConverter() {
-        return new Jackson2JsonMessageConverter();
-    }
-    
-    // 메시지 리스너 설정
-    @Bean
-    public MessageListenerContainer messageListenerContainer(ConnectionFactory connectionFactory,
-                                                             MessageListenerAdapter listenerAdapter) {
-        SimpleMessageListenerContainer container = new SimpleMessageListenerContainer();
-        container.setConnectionFactory(connectionFactory);
-        container.setQueueNames(QUEUE_NAME);
-        container.setMessageListener(listenerAdapter);
-        return container;
-    }
-    
-    // 메시지 리스너 어댑터 설정
-    @Bean
-    public MessageListenerAdapter listenerAdapter(ChatMessageReceiver receiver, MessageConverter messageConverter) {
-        // 메시지 변환기를 설정하여 바이트 배열을 자동으로 변환하도록 함
-        MessageListenerAdapter adapter = new MessageListenerAdapter(receiver, "receiveMessage");
-        adapter.setMessageConverter(messageConverter);
-        return adapter;
+    @Bean MessageListenerAdapter listenerAdapter(ChatMessageReceiver r, MessageConverter mc) {
+        MessageListenerAdapter a = new MessageListenerAdapter(r, "receiveMessage");
+        a.setMessageConverter(mc);
+        return a;
     }
 }
