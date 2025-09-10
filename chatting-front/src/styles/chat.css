@@ -5,7 +5,7 @@
 .chat__empty { color: var(--muted); text-align: center; padding: 24px 0; }
 
 .chat__input { display: grid; grid-template-columns: 1fr auto; gap: 8px; padding: 12px; border-top: 1px solid var(--line); background: rgba(255,255,255,0.02); }
-.chat__input input { background: #0b1222; border: 1px solid #1f2937; color: var(--text); padding: 12px; border-radius: 12px; }
+.chat__input input { background: #e9ebf0; border: 1px solid #1f2937; color: var(--text); padding: 12px; border-radius: 12px; }
 
 .bubble { max-width: 72%; padding: 10px 12px; border-radius: 16px; display: grid; gap: 4px; }
 .bubble--me { justify-self: end; background: linear-gradient(180deg, #22d3ee, #0891b2); color: black; border-top-right-radius: 4px; }

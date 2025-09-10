@@ -1,0 +1,56 @@
+.friends {
+  max-width: 960px;
+  margin: 24px auto;
+  padding: 0 20px;
+}
+
+.friends h2 {
+  margin: 0 0 16px;
+  font-size: 22px;
+  font-weight: 800;
+}
+
+.friends__add {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.friends__add input { min-width: 200px; }
+.friends__add button { padding-inline: 16px; }
+
+.friends__list {
+  list-style: none; padding: 0; margin: 0;
+  display: grid; gap: 8px;
+}
+.friends__row {
+  display: flex; align-items: center; justify-content: space-between;
+  background: #fff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 12px 14px;
+}
+.friends__row > span { display: inline-flex; align-items: center; gap: 8px; }
+.friends__row a {
+  background: #f1f5f9; color: #0f172a; padding: 8px 12px; border-radius: 12px; text-decoration: none;
+}
+.friends__row a:hover { background: #e2e8f0; }
+
+/* Requests panel (공유: RequestsPanel.jsx) */
+.requests { margin-top: 24px; }
+.requests h3 { margin: 0 0 12px; font-size: 18px; font-weight: 800; }
+.requests__cols {
+  display: grid; gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+@media (max-width: 720px) {
+  .requests__cols { grid-template-columns: 1fr; }
+}
+.requests section {
+  background: #fff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 12px;
+}
+.requests section h4 {
+  margin: 0 0 10px; font-size: 14px; font-weight: 700; color: #475569;
+}
+.req {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 8px; border-radius: 10px;
+}
+.req + .req { border-top: 1px dashed #e2e8f0; }
