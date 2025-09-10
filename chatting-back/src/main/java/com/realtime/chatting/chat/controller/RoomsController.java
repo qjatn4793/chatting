@@ -3,13 +3,21 @@ package com.realtime.chatting.chat.controller;
 import java.util.List;
 
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 
 import com.realtime.chatting.chat.dto.RoomDto;
 import com.realtime.chatting.chat.dto.MessageDto;
 import com.realtime.chatting.chat.dto.SendMessageRequest;
 import com.realtime.chatting.chat.service.RoomService;
+import com.realtime.chatting.config.RabbitConfig;
+import com.realtime.chatting.friend.controller.FriendController;
+import com.realtime.chatting.friend.service.FriendService;
+
+import jakarta.validation.Valid;
+
 import com.realtime.chatting.chat.service.MessageService;
 
 import lombok.RequiredArgsConstructor;
@@ -22,6 +30,7 @@ public class RoomsController {
     private final RoomService roomService;
     private final MessageService messageService;
     private final RabbitTemplate rabbitTemplate;
+    private final FriendService friendService;
 
     @GetMapping
     public List<RoomDto> myRooms(Authentication auth) {
@@ -32,6 +41,9 @@ public class RoomsController {
     public RoomDto openDm(@PathVariable("friendUsername") String friendUsername,
                           Authentication auth) {
         String me = auth.getName();
+        if (!friendService.areFriends(me, friendUsername)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "not friends");
+        }
         return roomService.openDm(me, friendUsername);
     }
 
@@ -44,11 +56,15 @@ public class RoomsController {
 
     @PostMapping("/{roomId}/send")
     public MessageDto send(@PathVariable("roomId") String roomId,
-                           @RequestBody SendMessageRequest req,
+                           @Valid @RequestBody SendMessageRequest req,
                            Authentication auth) {
         String sender = auth.getName();
         MessageDto saved = messageService.save(roomId, sender, req.getMessage());
-        rabbitTemplate.convertAndSend("chatExchange", "chat.message", saved);
+
+        // RabbitMQ로 퍼블리시 (roomId별 라우팅키)
+        String routingKey = "chat.message.room." + roomId;
+        rabbitTemplate.convertAndSend(RabbitConfig.CHAT_EXCHANGE, routingKey, saved);
+
         return saved; // 클라이언트가 즉시 에코 받도록 반환
     }
 }

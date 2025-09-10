@@ -1,54 +1,57 @@
 package com.realtime.chatting.config;
 
-import org.springframework.amqp.core.Binding;
-import org.springframework.amqp.core.Queue;
-import org.springframework.amqp.core.TopicExchange;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.amqp.core.*;
 import org.springframework.amqp.rabbit.annotation.EnableRabbit;
 import org.springframework.amqp.rabbit.connection.ConnectionFactory;
-import org.springframework.amqp.rabbit.listener.MessageListenerContainer;
-import org.springframework.amqp.rabbit.listener.SimpleMessageListenerContainer;
-import org.springframework.amqp.rabbit.listener.adapter.MessageListenerAdapter;
+import org.springframework.amqp.rabbit.config.SimpleRabbitListenerContainerFactory;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;
-import org.springframework.amqp.support.converter.MessageConverter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
-
-import com.realtime.chatting.chat.controller.ChatMessageReceiver;
-
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
-import org.springframework.amqp.core.BindingBuilder;
 
 @Configuration
 @EnableRabbit
 public class RabbitConfig {
-    public static final String EXCHANGE_NAME = "chatExchange";
-    public static final String ROUTING_KEY = "chat.message";
-    public static final String QUEUE_NAME = "chatQueue";
 
-    @Bean TopicExchange chatExchange() { return new TopicExchange(EXCHANGE_NAME, true, false); }
-    @Bean Queue chatQueue() { return new Queue(QUEUE_NAME, true); }
-    @Bean Binding chatBinding(Queue q, TopicExchange ex) { return BindingBuilder.bind(q).to(ex).with(ROUTING_KEY); }
-    @Bean MessageConverter messageConverter() { return new Jackson2JsonMessageConverter(); }
+    public static final String CHAT_EXCHANGE = "chatExchange";
+    public static final String WS_BRIDGE_QUEUE = "chat.ws-bridge";
+    // 컨트롤러에서 chat.message.room.{roomId} 로 발행
+    public static final String ROUTING_KEY_PATTERN = "chat.message.room.*";
 
-    @Bean RabbitTemplate rabbitTemplate(ConnectionFactory cf, MessageConverter mc) {
-        RabbitTemplate t = new RabbitTemplate(cf);
-        t.setMessageConverter(mc);
-        return t;
+    @Bean
+    public TopicExchange chatExchange() {
+        return ExchangeBuilder.topicExchange(CHAT_EXCHANGE).durable(true).build();
     }
 
-    @Bean SimpleMessageListenerContainer container(ConnectionFactory cf, MessageListenerAdapter adapter) {
-        SimpleMessageListenerContainer c = new SimpleMessageListenerContainer(cf);
-        c.setQueueNames(QUEUE_NAME);
-        c.setMessageListener(adapter);
-        c.setConcurrentConsumers(2);
-        c.setMaxConcurrentConsumers(10);
-        return c;
+    @Bean
+    public Queue wsBridgeQueue() {
+        return QueueBuilder.durable(WS_BRIDGE_QUEUE).build();
     }
 
-    @Bean MessageListenerAdapter listenerAdapter(ChatMessageReceiver r, MessageConverter mc) {
-        MessageListenerAdapter a = new MessageListenerAdapter(r, "receiveMessage");
-        a.setMessageConverter(mc);
-        return a;
+    @Bean
+    public Binding wsBridgeBinding(Queue wsBridgeQueue, TopicExchange chatExchange) {
+        return BindingBuilder.bind(wsBridgeQueue).to(chatExchange).with(ROUTING_KEY_PATTERN);
+    }
+
+    @Bean
+    public Jackson2JsonMessageConverter jackson2JsonMessageConverter(ObjectMapper objectMapper) {
+        return new Jackson2JsonMessageConverter(objectMapper);
+    }
+
+    @Bean
+    public RabbitTemplate rabbitTemplate(ConnectionFactory cf, Jackson2JsonMessageConverter conv) {
+        RabbitTemplate rt = new RabbitTemplate(cf);
+        rt.setMessageConverter(conv);
+        return rt;
+    }
+
+    @Bean
+    public SimpleRabbitListenerContainerFactory rabbitListenerContainerFactory(
+            ConnectionFactory cf, Jackson2JsonMessageConverter conv) {
+        SimpleRabbitListenerContainerFactory f = new SimpleRabbitListenerContainerFactory();
+        f.setConnectionFactory(cf);
+        f.setMessageConverter(conv);
+        return f;
     }
 }
