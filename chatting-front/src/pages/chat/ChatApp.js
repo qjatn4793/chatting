@@ -1,65 +1,63 @@
 import React, { useState, useEffect, useRef } from 'react';
 import SockJS from 'sockjs-client';
-import Stomp from 'stompjs';
-import axios from 'axios';
+import { Client } from '@stomp/stompjs';
 import { jwtDecode } from 'jwt-decode';
 import { useAuth } from '../../context/AuthContext';
+import { api, API_BASE_URL } from '../../lib/api';
 import '../../styles/ChatApp.css';
 
 const ChatApp = () => {
-  const { jwtToken, logout } = useAuth();
+  const { token, user, logout } = useAuth(); // AuthContext: token/user/api 사용
   const [messages, setMessages] = useState([]);
   const [message, setMessage] = useState('');
   const [isConnected, setIsConnected] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  const [stompClient, setStompClient] = useState(null);
+  const stompRef = useRef(null); // STOMP 인스턴스는 ref로 관리
   const [userId, setUserId] = useState('');
   const messageBoxRef = useRef(null);
   const messageInputRef = useRef(null);
 
-  // 토큰에서 userId 추출
+  // 토큰에서 userId 추출(가능하면 컨텍스트 user 사용)
   useEffect(() => {
-    console.log(jwtToken);
-
-    if (jwtToken) {
-      try {
-        const decoded = jwtDecode(jwtToken);
-        console.log('decoded JWT:', decoded);
-        const idFromToken =
-          decoded.sub ??
-          decoded.username ??
-          decoded.userId ??
-          '';
-
-        setUserId(idFromToken);
-        setTimeout(() => {
-          sendSystemMessage(`${idFromToken}님이 채팅방에 입장했습니다.`);
-        }, 1000);
-      } catch (e) {
-        console.error('JWT 디코드 실패:', e);
-        logout();
-      }
-    } else {
+    if (!token) {
       console.error('Token missing or expired');
       logout();
+      return;
     }
-  }, [jwtToken, logout]);
+    try {
+      const id = user ?? (jwtDecode(token)?.sub ?? jwtDecode(token)?.username ?? jwtDecode(token)?.userId ?? '');
+      setUserId(id);
+      // 입장 시스템 메시지 (선택)
+      setTimeout(() => {
+        sendSystemMessage(`${id}님이 채팅방에 입장했습니다.`);
+      }, 600);
+    } catch (e) {
+      console.error('JWT 디코드 실패:', e);
+      logout();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, user, logout]);
 
   // 채팅 시작 / 종료
   useEffect(() => {
-    if (jwtToken && !isConnected) {
+    if (token && !isConnected) {
       startChat();
     }
 
-    window.onbeforeunload = () => {
-      if (isConnected) endChat();
+    const beforeUnload = () => {
+      if (stompRef.current && stompRef.current.active) {
+        try {
+          sendSystemMessage(`${userId}님이 채팅방을 나갔습니다.`);
+          stompRef.current.deactivate();
+        } catch {}
+      }
     };
-    return () => {
-      window.onbeforeunload = null;
-    };
-  }, [jwtToken, isConnected]);
+    window.addEventListener('beforeunload', beforeUnload);
+    return () => window.removeEventListener('beforeunload', beforeUnload);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, isConnected, userId]);
 
-  // 새 메시지 오면 스크롤
+  // 새 메시지 오면 스크롤 맨 아래로
   useEffect(() => {
     if (messageBoxRef.current) {
       messageBoxRef.current.scrollTop = messageBoxRef.current.scrollHeight;
@@ -67,79 +65,81 @@ const ChatApp = () => {
   }, [messages]);
 
   const startChat = () => {
-    if (isConnected) return;
-    if (!jwtToken) return console.error('No token');
-
-    const socket = new SockJS(`${process.env.REACT_APP_CHATTING_SERVER}/chat`, null, {
-      transports: ['websocket', 'xhr-streaming', 'xhr-polling'], // jsonp-polling 제거
-    });
-    const client = Stomp.over(socket);
-    client.heartbeat.outgoing = 1000;
-    client.heartbeat.incoming = 0;
+    if (isConnected || !token) return;
 
     setIsLoading(true);
-    setIsConnected(true);
+    // WebSocket(SockJS) 엔드포인트를 env 기반으로
+    const client = new Client({
+      webSocketFactory: () => new SockJS(`${API_BASE_URL}/ws`), // <-- 서버가 /chat이면 /chat로 변경
+      connectHeaders: { Authorization: `Bearer ${token}` }, // 필요하면 서버 측에서 사용
+      debug: () => {},            // 콘솔 디버깅 원하면 (msg) => console.log(msg)
+      reconnectDelay: 1500,       // 자동 재연결
+      heartbeatIncoming: 10000,
+      heartbeatOutgoing: 10000,
+    });
 
-    const connect = () => {
-      client.connect(
-        {},
-        (frame) => {
-          console.log('Connected: ' + frame);
-          setStompClient(client);
-          client.subscribe('/topic/messages', ({ body }) => {
-            try {
-              const { sender, message: msg } = JSON.parse(body);
-              setMessages(prev => [...prev, { sender, message: msg }]);
-            } catch (e) {
-              console.error('Parse error', e);
-            }
-          });
-          setIsLoading(false);
-        },
-        (err) => {
-          console.error('WebSocket error', err);
-          setIsConnected(false);
-          setTimeout(connect, 1000);
+    client.onConnect = () => {
+      setIsConnected(true);
+      setIsLoading(false);
+
+      // 브로드캐스트 메시지 구독
+      client.subscribe('/topic/messages', ({ body }) => {
+        try {
+          const { sender, message: msg } = JSON.parse(body);
+          setMessages(prev => [...prev, { sender, message: msg }]);
+        } catch (e) {
+          console.error('Parse error', e);
         }
-      );
+      });
+
+      // (선택) 단일 세션 킥 시그널 구독
+      client.subscribe('/user/queue/kick', () => {
+        logout();
+      });
     };
-    connect();
+
+    client.onStompError = (f) => {
+      console.error('STOMP error', f);
+    };
+
+    client.onWebSocketClose = () => {
+      setIsConnected(false);
+      setIsLoading(false);
+    };
+
+    client.activate();
+    stompRef.current = client;
   };
 
   const endChat = () => {
-    if (stompClient) {
+    try {
       sendSystemMessage(`${userId}님이 채팅방을 나갔습니다.`);
-      stompClient.disconnect(() => {
-        console.log('Disconnected');
+    } catch {}
+    if (stompRef.current && stompRef.current.active) {
+      stompRef.current.deactivate().finally(() => {
         setIsConnected(false);
         logout();
       });
+    } else {
+      logout();
     }
   };
 
   const sendSystemMessage = (text) => {
-    axios.post(
-      `${process.env.REACT_APP_CHATTING_SERVER}/api/chat/send`,
-      { message: text, sender: 'System' },
-      { headers: { Authorization: `Bearer ${jwtToken}` } }
-    ).catch(console.error);
+    // 공용 api 사용 (Authorization 헤더 자동 첨부)
+    api.post('/api/chat/send', { message: text, sender: 'System' }).catch(console.error);
   };
 
-  const sendMessage = () => {
+  const sendMessage = async () => {
     if (!message.trim() || !isConnected) return;
-    axios.post(
-      `${process.env.REACT_APP_CHATTING_SERVER}/api/chat/send`,
-      { message, sender: userId },
-      { headers: { Authorization: `Bearer ${jwtToken}` } }
-    )
-    .then(() => {
+    try {
+      await api.post('/api/chat/send', { message, sender: userId });
       setMessage('');
       messageInputRef.current?.focus();
-    })
-    .catch((e) => {
+    } catch (e) {
       console.error('Error sending', e);
       alert('전송 오류, 다시 시도하세요.');
-    });
+    }
   };
 
   const handleKeyDown = (e) => {
@@ -155,7 +155,9 @@ const ChatApp = () => {
         <h1 className="chat-title">Meow Chat!</h1>
         <button onClick={endChat} className="end-chat-button">Logout</button>
       </div>
+
       {isLoading && <p>Loading...</p>}
+
       <div className="message-box" ref={messageBoxRef}>
         {messages.map((msg, i) => (
           <div
@@ -167,16 +169,13 @@ const ChatApp = () => {
             }
           >
             <div className="message-sender">{msg.sender}</div>
-            <div
-              className={
-                msg.sender === userId ? 'message my-message' : 'message other-message'
-              }
-            >
+            <div className={msg.sender === userId ? 'message my-message' : 'message other-message'}>
               {msg.message}
             </div>
           </div>
         ))}
       </div>
+
       <div className="chat-input">
         <input
           ref={messageInputRef}
@@ -187,7 +186,7 @@ const ChatApp = () => {
           placeholder="Type your message"
           className="input-field"
         />
-        <button onClick={sendMessage} disabled={isLoading} className="send-button">
+        <button onClick={sendMessage} disabled={isLoading || !isConnected} className="send-button">
           Send
         </button>
       </div>

@@ -1,16 +1,12 @@
 import React from 'react';
-import ReactDOM from 'react-dom/client';
-import './styles/index.css';
+import { createRoot } from 'react-dom/client';
+import { BrowserRouter } from 'react-router-dom';
 import App from './App';
-import reportWebVitals from './reportWebVitals';
-import { AuthProvider } from './context/AuthContext';
+import './styles/global.css';
 
-const root = ReactDOM.createRoot(document.getElementById('root'));
+const root = createRoot(document.getElementById('root'));
 root.render(
-  // React.StrictMode 제거
-  <AuthProvider>
+  <BrowserRouter>
     <App />
-  </AuthProvider>
+  </BrowserRouter>
 );
-
-reportWebVitals();

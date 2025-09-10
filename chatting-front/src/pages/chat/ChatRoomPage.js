@@ -1,81 +1,129 @@
 import React, { useEffect, useRef, useState } from 'react';
-import axios from 'axios';
-import SockJS from 'sockjs-client';
+import { useParams, useNavigate } from 'react-router-dom';
 import { Client } from '@stomp/stompjs';
-import { jwtDecode } from 'jwt-decode';
-import { useParams } from 'react-router-dom';
+import SockJS from 'sockjs-client';
 import { useAuth } from '../../context/AuthContext';
+import { API_BASE_URL } from '../../lib/api';
+import '../../styles/chat.css';
 
-const ChatRoomPage = () => {
+export default function ChatRoomPage() {
   const { roomId } = useParams();
-  const { jwtToken } = useAuth();
+  const navigate = useNavigate();
+  const { api, token, user, logout } = useAuth();
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState('');
+  const [connected, setConnected] = useState(false);
+  const listRef = useRef(null);
   const clientRef = useRef(null);
-  const me = useRef(null);
 
-  useEffect(() => {
-    if (!jwtToken) return;
-    try {
-      const { sub } = jwtDecode(jwtToken);
-      me.current = sub;
-    } catch (e) { console.error(e); }
-  }, [jwtToken]);
+  const me = user || 'me';
 
+  // 초기 이력 로드
   useEffect(() => {
-    if (!jwtToken) return;
-    axios.get(`http://localhost:8080/api/rooms/${roomId}/messages?limit=50`, {
-      headers: { Authorization: `Bearer ${jwtToken}` }
-    }).then(res => setMessages(res.data)).catch(console.error);
-  }, [jwtToken, roomId]);
+    api.get(`/api/rooms/${roomId}/messages?limit=100`)
+      .then(res => setMessages(res.data || []))
+      .catch(console.error);
+  }, [api, roomId]);
 
+  // 실시간 구독
   useEffect(() => {
-    if (!jwtToken) return;
+    if (!token) return;
     const client = new Client({
-      webSocketFactory: () => new SockJS('http://localhost:8080/chat'),
-      reconnectDelay: 3000,
-      onConnect: () => {
-        client.subscribe(`/topic/rooms/${roomId}`, ({ body }) => {
-          try { setMessages(prev => [...prev, JSON.parse(body)]); }
-          catch (e) { console.error('parse', e); }
-        });
-      }
+      webSocketFactory: () => new SockJS(`${API_BASE_URL}/ws`),
+      connectHeaders: { Authorization: `Bearer ${token}` },
+      reconnectDelay: 1500,
+      debug: () => {},
     });
+
+    client.onConnect = () => {
+      setConnected(true);
+      // 1) 방 주제
+      client.subscribe(`/topic/room.${roomId}`, (frame) => {
+        try {
+          const msg = JSON.parse(frame.body);
+          setMessages(prev => [...prev, msg]);
+        } catch (e) { console.error(e); }
+      });
+      // 2) fallback: 서버가 /topic/messages 로만 보내는 경우, roomId 필터
+      client.subscribe('/topic/messages', (frame) => {
+        try {
+          const msg = JSON.parse(frame.body);
+          if (!msg.roomId || msg.roomId === roomId) {
+            setMessages(prev => [...prev, msg]);
+          }
+        } catch (e) { /* ignore */ }
+      });
+      // 3) 세션 킥
+      client.subscribe('/user/queue/kick', () => {
+        logout();
+      });
+    };
+
+    client.onStompError = () => {};
+    client.onWebSocketClose = () => setConnected(false);
+
     client.activate();
     clientRef.current = client;
-    return () => { client.deactivate(); };
-  }, [jwtToken, roomId]);
+
+    return () => {
+      if (client.active) client.deactivate();
+      clientRef.current = null;
+    };
+  }, [token, roomId, logout]);
+
+  // 자동 스크롤
+  useEffect(() => {
+    const el = listRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [messages]);
 
   const send = async () => {
-    if (!text.trim()) return;
+    const m = text.trim();
+    if (!m) return;
     try {
-      await axios.post(`http://localhost:8080/api/rooms/${roomId}/send`, { message: text }, {
-        headers: { Authorization: `Bearer ${jwtToken}` }
-      });
+      await api.post(`/api/rooms/${roomId}/send`, { message: m });
       setText('');
-    } catch (e) { console.error(e); }
+    } catch (e) {
+      console.error(e);
+      alert('전송 실패');
+    }
   };
-  const onKey = (e) => e.key === 'Enter' && send();
+
+  const leave = () => navigate('/friends');
 
   return (
-    <div style={{ maxWidth: 720, margin: '0 auto', padding: 16 }}>
-      <h3>Room: {roomId}</h3>
-      <div style={{ border: '1px solid #ddd', borderRadius: 8, padding: 12, height: 420, overflowY: 'auto', marginBottom: 12 }}>
-        {messages.map(m => (
-          <div key={m.id ?? (m.sender+m.createdAt)} style={{ textAlign: m.sender === me.current ? 'right' : 'left', margin: '8px 0' }}>
-            <div style={{ display: 'inline-block', padding: '8px 12px', borderRadius: 16, background: m.sender === me.current ? '#e6f3ff' : '#f6f6f6' }}>
-              <div style={{ fontSize: 12, opacity: 0.6 }}>{m.sender}</div>
-              <div>{m.content ?? m.message}</div>
-            </div>
-          </div>
-        ))}
+    <div className="chat">
+      <div className="chat__header">
+        <button className="btn btn--ghost" onClick={leave}>← Back</button>
+        <h3 className="chat__title">Room {roomId}</h3>
+        <div />
       </div>
-      <div style={{ display: 'flex', gap: 8 }}>
-        <input style={{ flex: 1 }} value={text} onChange={e => setText(e.target.value)} onKeyDown={onKey} placeholder="메시지를 입력하세요" />
-        <button onClick={send}>보내기</button>
+
+      <div className="chat__list" ref={listRef}>
+        {messages.map((m, i) => {
+          const mine = (m.sender === me);
+          return (
+            <div key={i} className={`bubble ${mine ? 'bubble--me' : 'bubble--other'}`}>
+              <div className="bubble__sender">{m.sender || 'unknown'}</div>
+              <div className="bubble__body">{m.message || m.text}</div>
+              {m.sentAt && <div className="bubble__time">{new Date(m.sentAt).toLocaleTimeString()}</div>}
+            </div>
+          );
+        })}
+        {messages.length === 0 && (
+          <div className="chat__empty">아직 메시지가 없습니다. 첫 메시지를 보내보세요!</div>
+        )}
+      </div>
+
+      <div className="chat__input">
+        <input
+          placeholder="메시지를 입력하세요"
+          value={text}
+          onChange={e=>setText(e.target.value)}
+          onKeyDown={e => (e.key === 'Enter') && send()}
+        />
+        <button className="btn" disabled={!connected || !text.trim()} onClick={send}>Send</button>
       </div>
     </div>
   );
-};
-
-export default ChatRoomPage;
+}

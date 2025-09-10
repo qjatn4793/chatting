@@ -1,61 +1,45 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { jwtDecode } from 'jwt-decode';
+import { api, setAuthToken, setOnUnauthorized } from '../lib/api';
 
-// 안전한 최소한의 디코더 (검증 X, payload만 파싱)
-function parseJwt(token) {
-  try {
-    const base64Url = token.split('.')[1];
-    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-    const json = decodeURIComponent(
-      atob(base64).split('').map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join('')
-    );
-    return JSON.parse(json);
-  } catch {
-    return null;
-  }
-}
+const AuthContext = createContext(null);
+export const useAuth = () => useContext(AuthContext);
 
-const AuthCtx = createContext(null);
-
-export const AuthProvider = ({ children }) => {
-  // 초기 렌더 시 로컬스토리지에서 바로 읽어오면 깜빡임 없이 재로그인 유지
-  const [jwtToken, setJwtToken] = useState(() => {
-    const t = localStorage.getItem('jwtToken');
-    if (!t) return null;
-    const payload = parseJwt(t);
-    if (payload?.exp && payload.exp * 1000 <= Date.now()) {
-      // 만료된 토큰은 버림
-      localStorage.removeItem('jwtToken');
-      return null;
-    }
-    return t;
+export default function AuthProvider({ children }) {
+  const navigate = useNavigate();
+  const [token, setToken] = useState(() => localStorage.getItem('token') || null);
+  const [user, setUser] = useState(() => {
+    const t = localStorage.getItem('token');
+    try { return t ? jwtDecode(t)?.sub || null : null; } catch { return null; }
   });
 
-  const login = (token) => {
-    setJwtToken(token);
-    localStorage.setItem('jwtToken', token);
+  // 초기에 axios 헤더 세팅
+  useEffect(() => {
+    setAuthToken(token);
+  }, [token]);
+
+  // 인터셉터에서 401/강제만료 만나면 logout
+  useEffect(() => {
+    setOnUnauthorized(() => () => { logout(); });
+  }, []);
+
+  const login = (newToken) => {
+    setToken(newToken);
+    try { setUser(jwtDecode(newToken)?.sub || null); } catch { setUser(null); }
+    navigate('/friends', { replace: true });
   };
 
   const logout = () => {
-    setJwtToken(null);
-    localStorage.removeItem('jwtToken');
+    setToken(null);
+    setUser(null);
+    setAuthToken(null);
+    navigate('/login', { replace: true });
   };
 
-  // 남은 만료 시간만큼 타이머 걸어 자동 로그아웃
-  useEffect(() => {
-    if (!jwtToken) return;
-    const payload = parseJwt(jwtToken);
-    if (!payload?.exp) return;
-    const ms = payload.exp * 1000 - Date.now();
-    if (ms <= 0) {
-      logout();
-      return;
-    }
-    const id = setTimeout(() => logout(), ms);
-    return () => clearTimeout(id);
-  }, [jwtToken]);
+  const value = useMemo(() => ({
+    token, user, isAuthed: !!token, login, logout, api
+  }), [token, user]);
 
-  const value = useMemo(() => ({ jwtToken, login, logout }), [jwtToken]);
-  return <AuthCtx.Provider value={value}>{children}</AuthCtx.Provider>;
-};
-
-export const useAuth = () => useContext(AuthCtx);
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+}
