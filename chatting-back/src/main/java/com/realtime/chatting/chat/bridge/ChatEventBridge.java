@@ -20,20 +20,25 @@ public class ChatEventBridge {
     @RabbitListener(queues = RabbitConfig.WS_BRIDGE_QUEUE) // "chat.ws-bridge"
     public void onMessage(
             MessageDto message,
-            @Header(name = AmqpHeaders.RECEIVED_ROUTING_KEY, required = false) String rk
+            @Header(name = AmqpHeaders.RECEIVED_ROUTING_KEY, required = false) String routingKey
     ) {
         try {
             String roomId = message.getRoomId();
-            if ((roomId == null || roomId.isBlank()) && rk != null && rk.startsWith("chat.message.room.")) {
-                roomId = rk.substring("chat.message.room.".length());
+            // roomId가 비어 있으면 라우팅키 "chat.message.room.{roomId}"에서 파싱
+            if ((roomId == null || roomId.isBlank())
+                    && routingKey != null
+                    && routingKey.startsWith("chat.message.room.")) {
+                roomId = routingKey.substring("chat.message.room.".length());
             }
             if (roomId == null || roomId.isBlank()) {
-                log.warn("WS bridge dropped: roomId missing. rk={}, payload={}", rk, message);
+                log.warn("WS bridge dropped: roomId missing. rk={}, payload={}", routingKey, message);
                 return;
             }
-            String dest = "/topic/rooms/" + roomId; // ✅ 서버-클라 통일 주소
-            log.debug("WS bridge -> {} :: {}", dest, message);
-            messagingTemplate.convertAndSend(dest, message);
+
+            String destination = "/topic/rooms/" + roomId;
+            log.info("WS bridge -> {} (rk={})", destination, routingKey);
+            messagingTemplate.convertAndSend(destination, message);
+
         } catch (Exception e) {
             log.error("WS bridge failed", e);
         }

@@ -1,26 +1,9 @@
-import React, { useEffect, useRef, useState, useMemo } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import SockJS from 'sockjs-client';
 import { Client } from '@stomp/stompjs';
 import http, { API_BASE_URL } from '../../api/http';
 import '../../styles/chat.css';
-
-// JWT payload 디코드 (sub/username 등에서 현재 사용자명 추출)
-function decodeJwt(token) {
-  try {
-    const payload = token.split('.')[1];
-    const json = atob(payload.replace(/-/g, '+').replace(/_/g, '/'));
-    return JSON.parse(decodeURIComponent(escape(json)));
-  } catch {
-    return null;
-  }
-}
-function getMeFromToken() {
-  const t = localStorage.getItem('jwt');
-  if (!t) return null;
-  const p = decodeJwt(t);
-  return p?.username || p?.sub || p?.name || p?.user || null;
-}
 
 export default function ChatRoomPage() {
   const { roomId } = useParams();
@@ -31,32 +14,13 @@ export default function ChatRoomPage() {
   const clientRef = useRef(null);
   const endRef = useRef(null);
 
-  // 현재 로그인한 사용자명 (JWT에서 추출)
-  const me = useMemo(() => getMeFromToken(), []);
-
-  // 내/남 메시지 구분 함수
-  const isMine = (m) => {
-    const sender =
-      m.sender ||
-      m.from ||
-      m.senderUsername ||
-      m.user ||
-      m.author ||
-      '';
-    if (!me || !sender) return false;
-    return String(sender).toLowerCase() === String(me).toLowerCase();
-  };
-
-  // 서버에서 오는 다양한 키를 흡수 + mine 세팅
-  const normalize = (m) => {
-    const obj = {
-      id: m.id ?? crypto.randomUUID(),
-      sender: m.sender || m.from || m.senderUsername || m.user || 'unknown',
-      content: m.message || m.text || m.content || m.body || '',
-      createdAt: m.createdAt || m.time || null,
-    };
-    return { ...obj, mine: isMine(obj) };
-  };
+  // 서버에서 오는 다양한 키를 흡수
+  const normalize = (m) => ({
+    id: m.id ?? crypto.randomUUID(),
+    sender: m.sender || m.from || m.senderUsername || m.user || 'unknown',
+    content: m.message || m.text || m.content || m.body || '',
+    createdAt: m.createdAt || m.time || null,
+  });
 
   // 히스토리 로딩
   useEffect(() => {
@@ -88,7 +52,7 @@ export default function ChatRoomPage() {
 
     client.onConnect = () => {
       setConnected(true);
-      const dest = `/topic/rooms/${roomId}`;  // 백엔드와 동일 경로
+      const dest = `/topic/rooms/${roomId}`;  // 백엔드와 동일
       console.log('[WS] subscribing ->', dest);
 
       client.subscribe(dest, (frame) => {
@@ -115,7 +79,7 @@ export default function ChatRoomPage() {
       clientRef.current = null;
       setConnected(false);
     };
-  }, [roomId]); // roomId 변경 시 재구독
+  }, [roomId]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -125,7 +89,7 @@ export default function ChatRoomPage() {
     const body = text.trim();
     if (!body) return;
     try {
-      // 서버가 브로드캐스트를 해주므로 낙관적 추가는 생략(중복 방지)
+      // ✅ roomId 기준 REST 전송 (서버가 Rabbit → STOMP 브릿지)
       await http.post(`/api/rooms/${encodeURIComponent(roomId)}/send`, { message: body });
       setText('');
     } catch (e) {
@@ -138,14 +102,12 @@ export default function ChatRoomPage() {
       <div className="chat__header">
         <button onClick={() => nav('/friends')}>← Friends</button>
         <h2>Room: {roomId}</h2>
-        <span className="muted">
-          {connected ? `connected${me ? ' as ' + me : ''}` : 'connecting...'}
-        </span>
+        <span className="muted">{connected ? 'connected' : 'connecting...'}</span>
       </div>
 
       <div className="chat__list">
         {messages.map((m) => (
-          <div key={m.id} className={`chat__msg ${m.mine ? 'me' : ''}`}>
+          <div key={m.id} className="chat__msg">
             <div className="chat__sender">{m.sender}</div>
             <div className="chat__bubble">{m.content}</div>
           </div>
