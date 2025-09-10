@@ -11,16 +11,14 @@ import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerCo
 public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
-    public void configureMessageBroker(MessageBrokerRegistry registry) {
-        registry.enableSimpleBroker("/topic");  // 클라이언트에게 전달할 메시지의 prefix: /topic
-        registry.setApplicationDestinationPrefixes("/app");  // 클라이언트가 서버로 보낼 메시지의 prefix: /app
+    public void configureMessageBroker(MessageBrokerRegistry config) {
+    	config.enableSimpleBroker("/topic", "/queue");  // 클라이언트에게 전달할 메시지의 prefix: /topic
+    	config.setApplicationDestinationPrefixes("/app");  // 클라이언트가 서버로 보낼 메시지의 prefix: /app
+    	config.setUserDestinationPrefix("/user");
     }
 
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
-        registry.addEndpoint("/chat")
-        .setAllowedOrigins("http://localhost:3000") // React 클라이언트 URL 추가
-        .setAllowedOriginPatterns("*")
-        .withSockJS();;  // 클라이언트에서 /chat으로 WebSocket 연결
+        registry.addEndpoint("/ws").setAllowedOriginPatterns("*").withSockJS();
     }
 }

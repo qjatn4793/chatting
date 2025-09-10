@@ -31,6 +31,23 @@ services:
       - mynetwork
     volumes:
       - rabbitmq-data:/var/lib/rabbitmq    # RabbitMQ 데이터 영속성을 위한 볼륨
+  
+  redis:
+    image: redis:7-alpine
+    container_name: toy-redis
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "1234"]
+    ports:
+      - "6379:6379"               # 호스트에서 접근 시 localhost:6379
+    networks:
+      - mynetwork
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "changeme_redis_pw", "PING"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
 
 networks:
   mynetwork:
@@ -41,3 +58,5 @@ volumes:
     driver: local  # MariaDB 데이터를 위한 영속적인 볼륨
   rabbitmq-data:
     driver: local  # RabbitMQ 데이터를 위한 영속적인 볼륨
+  redis-data:
+    driver: local  # redis 데이터를 위한 영속적인 볼륨

@@ -34,10 +34,11 @@ public class JwtService {
         this.expirationMs = expirationMs;
     }
 
-    public String issue(String subject) {
+    public String issue(String subject, String sid) {
         Instant now = Instant.now();
         return Jwts.builder()
                 .setSubject(subject)
+                .claim("sid", sid)
                 .setIssuedAt(Date.from(now))
                 .setExpiration(Date.from(now.plusMillis(expirationMs)))
                 .signWith(key, SignatureAlgorithm.HS256)

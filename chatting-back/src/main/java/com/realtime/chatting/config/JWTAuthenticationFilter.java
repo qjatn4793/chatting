@@ -15,6 +15,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
+import com.realtime.chatting.auth.SessionStore;
 import com.realtime.chatting.login.service.JwtService;
 
 import java.io.IOException;
@@ -25,8 +26,9 @@ import java.util.List;
 @Slf4j
 public class JWTAuthenticationFilter extends OncePerRequestFilter {
 
+	private final JwtService jwtService;
+	private final SessionStore sessionStore;
     private static final String BEARER = "Bearer ";
-    private final JwtService jwtService;
 
     /** 인증이 필요 없는 경로는 필터를 아예 건너뜁니다. */
     @Override
@@ -38,30 +40,30 @@ public class JWTAuthenticationFilter extends OncePerRequestFilter {
     }
 
     @Override
-    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
+    protected void doFilterInternal(HttpServletRequest req, HttpServletResponse res, FilterChain chain)
             throws ServletException, IOException {
 
-        String header = request.getHeader(HttpHeaders.AUTHORIZATION);
-
-        if (header != null && header.startsWith(BEARER)) {
-            String token = header.substring(BEARER.length());
-
+        String h = req.getHeader(HttpHeaders.AUTHORIZATION);
+        if (h != null && h.startsWith(BEARER)) {
+            String token = h.substring(BEARER.length());
             try {
                 Jws<Claims> jws = jwtService.parse(token);
-                String username = jws.getBody().getSubject();
+                Claims c = jws.getBody();
+                String username = c.getSubject();
+                String sid = c.get("sid", String.class);
 
-                if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
-                    // 권한이 필요하면 jws.getBody().get("roles")에서 꺼내 매핑하세요.
-                    UsernamePasswordAuthenticationToken auth =
-                            new UsernamePasswordAuthenticationToken(username, null, List.of());
+                String activeSid = sessionStore.getActiveSid(username);
+                if (activeSid == null || !activeSid.equals(sid)) {
+                    // 이전/무효 토큰: 인증 세팅 안 함 (보호 리소스 접근 시 401)
+                    res.setHeader("X-Session-Expired", "true");
+                } else if (SecurityContextHolder.getContext().getAuthentication() == null) {
+                    var auth = new UsernamePasswordAuthenticationToken(username, null, List.of());
                     SecurityContextHolder.getContext().setAuthentication(auth);
                 }
             } catch (JwtException e) {
-                // 서명 불일치/만료/형식 오류 등
-                log.error("JWT token is invalid or expired: {}", e.getMessage());
+                log.warn("Invalid JWT: {}", e.getMessage());
             }
         }
-
-        chain.doFilter(request, response);
+        chain.doFilter(req, res);
     }
 }
