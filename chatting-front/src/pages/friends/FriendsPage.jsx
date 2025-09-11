@@ -1,167 +1,90 @@
-import React, { useEffect, useRef, useState, useMemo } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import SockJS from 'sockjs-client';
-import { Client } from '@stomp/stompjs';
-import http, { API_BASE_URL } from '../../api/http';
-import '../../styles/chat.css';
+import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import http from '../../api/http';
+import '../../styles/friends.css';
+import RequestsPanel from './RequestsPanel';
 
-// JWT payload 디코드 (sub/username 등에서 현재 사용자명 추출)
-function decodeJwt(token) {
-  try {
-    const payload = token.split('.')[1];
-    const json = atob(payload.replace(/-/g, '+').replace(/_/g, '/'));
-    return JSON.parse(decodeURIComponent(escape(json)));
-  } catch {
-    return null;
-  }
-}
-function getMeFromToken() {
-  const t = localStorage.getItem('jwt');
-  if (!t) return null;
-  const p = decodeJwt(t);
-  return p?.username || p?.sub || p?.name || p?.user || null;
-}
-
-export default function ChatRoomPage() {
-  const { roomId } = useParams();
+export default function FriendsPage() {
+  const [friends, setFriends] = useState([]);       // backend: List<String>
+  const [usernameToAdd, setUsernameToAdd] = useState('');
+  const [error, setError] = useState('');
+  const [sending, setSending] = useState(false);
+  const [opening, setOpening] = useState('');       // DM 열기 진행중인 친구명
   const nav = useNavigate();
-  const [messages, setMessages] = useState([]);
-  const [text, setText] = useState('');
-  const [connected, setConnected] = useState(false);
-  const clientRef = useRef(null);
-  const endRef = useRef(null);
 
-  // 현재 로그인한 사용자명 (JWT에서 추출)
-  const me = useMemo(() => getMeFromToken(), []);
-
-  // 내/남 메시지 구분 함수
-  const isMine = (m) => {
-    const sender =
-      m.sender ||
-      m.from ||
-      m.senderUsername ||
-      m.user ||
-      m.author ||
-      '';
-    if (!me || !sender) return false;
-    return String(sender).toLowerCase() === String(me).toLowerCase();
-  };
-
-  // 서버에서 오는 다양한 키를 흡수 + mine 세팅
-  const normalize = (m) => {
-    const obj = {
-      id: m.id ?? crypto.randomUUID(),
-      sender: m.sender || m.from || m.senderUsername || m.user || 'unknown',
-      content: m.message || m.text || m.content || m.body || '',
-      createdAt: m.createdAt || m.time || null,
-    };
-    return { ...obj, mine: isMine(obj) };
-  };
-
-  // 히스토리 로딩
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      try {
-        const res = await http.get(`/api/rooms/${encodeURIComponent(roomId)}/messages?limit=50`);
-        if (!alive) return;
-        const list = Array.isArray(res.data) ? res.data.map(normalize) : [];
-        setMessages(list);
-      } catch (e) {
-        console.error('[HTTP] history failed', e?.response?.data || e);
-      }
-    })();
-    return () => { alive = false; };
-  }, [roomId]);
-
-  // WebSocket 연결 + 구독
-  useEffect(() => {
-    if (clientRef.current?.active) clientRef.current.deactivate();
-
-    const token = localStorage.getItem('jwt');
-    const client = new Client({
-      webSocketFactory: () => new SockJS(`${API_BASE_URL}/ws`),
-      connectHeaders: token ? { Authorization: `Bearer ${token}` } : {},
-      debug: (str) => console.log('[STOMP]', str),
-      reconnectDelay: 5000,
-    });
-
-    client.onConnect = () => {
-      setConnected(true);
-      const dest = `/topic/rooms/${roomId}`;  // 백엔드와 동일 경로
-      console.log('[WS] subscribing ->', dest);
-
-      client.subscribe(dest, (frame) => {
-        try {
-          const payload = JSON.parse(frame.body);
-          console.log('[WS] message <-', payload);
-          setMessages((prev) => [...prev, normalize(payload)]);
-        } catch (e) {
-          console.warn('[WS] parse failed, raw:', frame.body);
-          setMessages((prev) => [...prev, normalize({ sender: 'system', content: frame.body })]);
-        }
-      });
-    };
-
-    client.onStompError = (frame) => {
-      console.error('[WS] broker error', frame);
-    };
-
-    client.activate();
-    clientRef.current = client;
-
-    return () => {
-      if (client.active) client.deactivate();
-      clientRef.current = null;
-      setConnected(false);
-    };
-  }, [roomId]); // roomId 변경 시 재구독
-
-  useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
-
-  const send = async () => {
-    const body = text.trim();
-    if (!body) return;
+  const load = async () => {
     try {
-      // 서버가 브로드캐스트를 해주므로 낙관적 추가는 생략(중복 방지)
-      await http.post(`/api/rooms/${encodeURIComponent(roomId)}/send`, { message: body });
-      setText('');
+      const res = await http.get('/api/friends');
+      setFriends(Array.isArray(res.data) ? res.data : []);
     } catch (e) {
-      console.error('[HTTP] send failed', e?.response?.data || e);
+      setError(e?.response?.data?.message || '친구 목록을 불러오지 못했습니다.');
     }
   };
 
+  const addFriend = async () => {
+    const name = usernameToAdd.trim();
+    if (!name) return;
+    setError('');
+    setSending(true);
+    try {
+      await http.post(`/api/friends/requests/${encodeURIComponent(name)}`);
+      setUsernameToAdd('');
+      await load();
+    } catch (e) {
+      setError(e?.response?.data?.message || '친구 요청을 보내지 못했습니다.');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const openDm = async (friendUsername) => {
+    setOpening(friendUsername);
+    try {
+      // ✅ 신규 방 생성 후 그 roomId로 이동
+      const res = await http.post(`/api/rooms/dm/${encodeURIComponent(friendUsername)}`);
+      const room = res.data;
+      if (!room?.id) throw new Error('room id missing');
+      nav(`/chat/${encodeURIComponent(room.id)}`);
+    } catch (e) {
+      setError(e?.response?.data?.message || 'DM 방을 열지 못했습니다.');
+    } finally {
+      setOpening('');
+    }
+  };
+
+  useEffect(() => { load(); }, []);
+
   return (
-    <div className="chat">
-      <div className="chat__header">
-        <button onClick={() => nav('/friends')}>← Friends</button>
-        <h2>Room: {roomId}</h2>
-        <span className="muted">
-          {connected ? `connected${me ? ' as ' + me : ''}` : 'connecting...'}
-        </span>
-      </div>
+    <div className="friends">
+      <h2>친구</h2>
 
-      <div className="chat__list">
-        {messages.map((m) => (
-          <div key={m.id} className={`chat__msg ${m.mine ? 'me' : ''}`}>
-            <div className="chat__sender">{m.sender}</div>
-            <div className="chat__bubble">{m.content}</div>
-          </div>
-        ))}
-        <div ref={endRef} />
-      </div>
-
-      <div className="chat__input">
+      <div className="friends__add">
         <input
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && send()}
-          placeholder="메시지를 입력하세요"
+          value={usernameToAdd}
+          onChange={(e)=>setUsernameToAdd(e.target.value)}
+          placeholder="사용자 아이디"
         />
-        <button disabled={!connected || !text.trim()} onClick={send}>Send</button>
+        <button onClick={addFriend} disabled={sending}>
+          {sending ? '요청 중…' : '친구 요청 보내기'}
+        </button>
       </div>
+
+      {error && <p className="error">{error}</p>}
+
+      <ul className="friends__list">
+        {friends.map((u) => (
+          <li key={u} className="friends__row">
+            <span className="status off" />
+            <span>{u}</span>
+            {/* ❌ 기존: <a href={`/chat/${u}`}>DM</a> */}
+            <button onClick={() => openDm(u)} disabled={opening === u}>
+              {opening === u ? '열는 중…' : 'DM'}
+            </button>
+          </li>
+        ))}
+      </ul>
+
+      <RequestsPanel />
     </div>
   );
 }
