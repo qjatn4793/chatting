@@ -13,7 +13,6 @@ import com.realtime.chatting.chat.dto.MessageDto;
 import com.realtime.chatting.chat.dto.SendMessageRequest;
 import com.realtime.chatting.chat.service.RoomService;
 import com.realtime.chatting.config.RabbitConfig;
-import com.realtime.chatting.friend.controller.FriendController;
 import com.realtime.chatting.friend.service.FriendService;
 
 import jakarta.validation.Valid;
