@@ -40,7 +40,7 @@ export default function FriendsPage() {
   const openDm = async (friendUsername) => {
     setOpening(friendUsername);
     try {
-      // ✅ 신규 방 생성 후 그 roomId로 이동
+      // 신규 방 생성 후 그 roomId로 이동
       const res = await http.post(`/api/rooms/dm/${encodeURIComponent(friendUsername)}`);
       const room = res.data;
       if (!room?.id) throw new Error('room id missing');
@@ -76,7 +76,6 @@ export default function FriendsPage() {
           <li key={u} className="friends__row">
             <span className="status off" />
             <span>{u}</span>
-            {/* ❌ 기존: <a href={`/chat/${u}`}>DM</a> */}
             <button onClick={() => openDm(u)} disabled={opening === u}>
               {opening === u ? '열는 중…' : 'DM'}
             </button>
