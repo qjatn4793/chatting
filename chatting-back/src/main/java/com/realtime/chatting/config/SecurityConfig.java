@@ -34,8 +34,6 @@ public class SecurityConfig {
                 .requestMatchers("/ws/**").permitAll()
                 // 인증/회원가입(프로젝트에 맞게 조정)
                 .requestMatchers("/api/auth/**", "/login", "/register").permitAll()
-                // 디버그 핑
-                .requestMatchers("/api/debug/**").permitAll()
                 // swagger 관련
                 .requestMatchers(
                         "/swagger-ui.html", "/swagger-ui/**",
