@@ -36,6 +36,12 @@ public class SecurityConfig {
                 .requestMatchers("/api/auth/**", "/login", "/register").permitAll()
                 // 디버그 핑
                 .requestMatchers("/api/debug/**").permitAll()
+                // swagger 관련
+                .requestMatchers(
+                        "/swagger-ui.html", "/swagger-ui/**",
+                        "/v3/api-docs/**", "/v3/api-docs.yaml",
+                        "/scalar/**"        // Scalar UI 쓰는 경우
+                    ).permitAll()
                 .anyRequest().authenticated()
             )
             .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class)
