@@ -17,7 +17,7 @@ export default function AuthForm() {
   // 이미 로그인 상태면 /friends 로
   useEffect(() => {
     if (isAuthed) {
-      nav('/api/friends', { replace: true });
+      nav('/friends', { replace: true });
     }
   }, [isAuthed, nav]);
 
@@ -33,16 +33,10 @@ export default function AuthForm() {
       if (!token) throw new Error('서버 응답에 토큰이 없습니다.');
       login(token); // 컨텍스트에 설정 → 가드 통과
 
-      // 로그인 전 가던 위치가 있으면 그쪽으로, 없으면 /api/friends
-      const to = state?.from?.pathname || '/api/friends';
+      // 로그인 전 가던 위치가 있으면 그쪽으로, 없으면 /friends
+      const to = state?.from?.pathname || '/friends';
       nav(to, { replace: true });
-
-      // 안전망 (라우터 컨텍스트/가드 꼬임 대비)
-      setTimeout(() => {
-        if (loc.pathname !== to) {
-          window.location.replace(to);
-        }
-      }, 150);
+      
     } catch (e) {
       setErr(e?.response?.data?.message || e.message || '실패했습니다.');
     }

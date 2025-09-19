@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import http from '../../api/http';
 import '../../styles/friends.css';
 import RequestsPanel from './RequestsPanel';
+import { useAuth } from '../../context/AuthContext';
 
 export default function FriendsPage() {
   const [friends, setFriends] = useState([]);       // backend: List<String>
@@ -11,6 +12,7 @@ export default function FriendsPage() {
   const [sending, setSending] = useState(false);
   const [opening, setOpening] = useState('');       // DM 열기 진행중인 친구명
   const nav = useNavigate();
+  const { userId, logout } = useAuth();
 
   const load = async () => {
     try {
@@ -56,7 +58,18 @@ export default function FriendsPage() {
 
   return (
     <div className="friends">
+      {/* 상단 사용자 정보 + 로그아웃 */}
+      <div className="friends__topbar">
+        <div className="friends__me">
+          <span className="me__label">로그인:</span>
+          <strong className="me__name">{userId || '알 수 없음'}</strong>
+        </div>
+        <button className="btn btn--logout" onClick={logout}>로그아웃</button>
+      </div>
+
       <h2>친구</h2>
+
+      {error && <p className="error">{error}</p>}
 
       <div className="friends__add">
         <input
@@ -69,18 +82,20 @@ export default function FriendsPage() {
         </button>
       </div>
 
-      {error && <p className="error">{error}</p>}
-
       <ul className="friends__list">
-        {friends.map((u) => (
-          <li key={u} className="friends__row">
-            <span className="status off" />
-            <span>{u}</span>
-            <button onClick={() => openDm(u)} disabled={opening === u}>
-              {opening === u ? '열는 중…' : 'DM'}
+        {friends.map((f) => (
+          <li key={f} className="friends__item">
+            <span>{f}</span>
+            <button
+              className="btn"
+              onClick={() => openDm(f)}
+              disabled={opening === f}
+            >
+              {opening === f ? '열기...' : '대화'}
             </button>
           </li>
         ))}
+        {!friends.length && <li className="friends__empty">친구가 없습니다.</li>}
       </ul>
 
       <RequestsPanel />

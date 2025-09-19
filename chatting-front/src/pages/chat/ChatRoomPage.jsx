@@ -1,30 +1,15 @@
-import React, { useEffect, useRef, useState, useMemo } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import SockJS from 'sockjs-client';
 import { Client } from '@stomp/stompjs';
 import http, { API_BASE_URL } from '../../api/http';
 import '../../styles/chat.css';
-
-// JWT payload 디코드 (sub/username 등에서 현재 사용자명 추출)
-function decodeJwt(token) {
-  try {
-    const payload = token.split('.')[1];
-    const json = atob(payload.replace(/-/g, '+').replace(/_/g, '/'));
-    return JSON.parse(decodeURIComponent(escape(json)));
-  } catch {
-    return null;
-  }
-}
-function getMeFromToken() {
-  const t = localStorage.getItem('jwt');
-  if (!t) return null;
-  const p = decodeJwt(t);
-  return p?.username || p?.sub || p?.name || p?.user || null;
-}
+import { useAuth } from '../../context/AuthContext';
 
 export default function ChatRoomPage() {
   const { roomId } = useParams();
   const nav = useNavigate();
+  const { token, userId } = useAuth();
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState('');
   const [connected, setConnected] = useState(false);
@@ -32,7 +17,7 @@ export default function ChatRoomPage() {
   const endRef = useRef(null);
 
   // 현재 로그인한 사용자명 (JWT에서 추출)
-  const me = useMemo(() => getMeFromToken(), []);
+  const me = userId;
 
   // 내/남 메시지 구분 함수
   const isMine = (m) => {
@@ -138,6 +123,7 @@ export default function ChatRoomPage() {
       <div className="chat__header">
         <button onClick={() => nav('/friends')}>← Friends</button>
         <h2>Room: {roomId}</h2>
+        <span className="me">나: {me || '알 수 없음'}</span>
         <span className="muted">
           {connected ? `connected${me ? ' as ' + me : ''}` : 'connecting...'}
         </span>
