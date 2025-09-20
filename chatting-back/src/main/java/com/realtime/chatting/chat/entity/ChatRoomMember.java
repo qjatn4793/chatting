@@ -22,6 +22,9 @@ public class ChatRoomMember {
 
     @ManyToOne(fetch = FetchType.LAZY) @JoinColumn(name = "user_id", nullable = false)
     private User user;
+    
+    @Column(name = "unread_count", nullable = false)
+    private int unreadCount;
 
     // JPA가 INSERT 시 자동으로 현재 시각 채움
     @Column(name = "joined_at", nullable = false, updatable = false)

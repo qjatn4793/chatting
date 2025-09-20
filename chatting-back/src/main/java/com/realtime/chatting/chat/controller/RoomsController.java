@@ -53,6 +53,7 @@ public class RoomsController {
         return messageService.history(roomId, capped);
     }
 
+    // 메세지를 실제로 보내는 영역
     @PostMapping("/{roomId}/send")
     public MessageDto send(@PathVariable("roomId") String roomId,
                            @Valid @RequestBody SendMessageRequest req,

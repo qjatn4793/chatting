@@ -5,34 +5,29 @@ import { Client } from '@stomp/stompjs';
 import http, { API_BASE_URL } from '../../api/http';
 import '../../styles/chat.css';
 import { useAuth } from '../../context/AuthContext';
+import { useNotifications } from '../../hooks/useNotifications';
 
 export default function ChatRoomPage() {
   const { roomId } = useParams();
   const nav = useNavigate();
-  const { token, userId } = useAuth();
+  const { userId } = useAuth();
+  const { setActiveRoom, clearFriend } = useNotifications(); // 현재 방 지정(알림 카운트 제외)
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState('');
   const [connected, setConnected] = useState(false);
   const clientRef = useRef(null);
   const endRef = useRef(null);
+  const peerRef = useRef(null); // DM 상태 캐시
 
-  // 현재 로그인한 사용자명 (JWT에서 추출)
   const me = userId;
 
-  // 내/남 메시지 구분 함수
   const isMine = (m) => {
     const sender =
-      m.sender ||
-      m.from ||
-      m.senderUsername ||
-      m.user ||
-      m.author ||
-      '';
+      m.sender || m.from || m.senderUsername || m.user || m.author || '';
     if (!me || !sender) return false;
     return String(sender).toLowerCase() === String(me).toLowerCase();
   };
 
-  // 서버에서 오는 다양한 키를 흡수 + mine 세팅
   const normalize = (m) => {
     const obj = {
       id: m.id ?? crypto.randomUUID(),
@@ -43,65 +38,122 @@ export default function ChatRoomPage() {
     return { ...obj, mine: isMine(obj) };
   };
 
-  // 히스토리 로딩
+  // 방 진입/이동 시 서버에 읽음 처리 + 현재 방 설정
   useEffect(() => {
-    let alive = true;
+    if (!roomId) return;
+    let cancelled = false;
+
+    // 현재 방 지정 → 알림 훅에서 이 방의 들어오는 알림은 카운트하지 않음
+    setActiveRoom(roomId);
+
     (async () => {
       try {
-        const res = await http.get(`/api/rooms/${encodeURIComponent(roomId)}/messages?limit=50`);
-        if (!alive) return;
+        await http.post(`/api/rooms/${encodeURIComponent(roomId)}/read`);
+      } catch (e) {
+        // 읽음 처리 실패해도 UI 진행은 가능
+        // console.warn('[READ] failed', e?.response?.data || e);
+      }
+      if (cancelled) return;
+      // 히스토리 로딩
+      try {
+        const res = await http.get(
+          `/api/rooms/${encodeURIComponent(roomId)}/messages?limit=50`
+        );
         const list = Array.isArray(res.data) ? res.data.map(normalize) : [];
         setMessages(list);
       } catch (e) {
-        console.error('[HTTP] history failed', e?.response?.data || e);
+        // console.error('[HTTP] history failed', e?.response?.data || e);
       }
     })();
-    return () => { alive = false; };
-  }, [roomId]);
+
+    return () => {
+      cancelled = true;
+      setActiveRoom(null); // 방 이탈 시 현재 방 해제
+    };
+  }, [roomId, setActiveRoom]);
 
   // WebSocket 연결 + 구독
   useEffect(() => {
-    if (clientRef.current?.active) clientRef.current.deactivate();
+    if (!roomId) return;
 
-    const token = localStorage.getItem('jwt');
+    // 이전 연결 종료
+    try { clientRef.current?.deactivate(); } catch {}
+    const jwt = localStorage.getItem('jwt');
+
     const client = new Client({
       webSocketFactory: () => new SockJS(`${API_BASE_URL}/ws`),
-      connectHeaders: token ? { Authorization: `Bearer ${token}` } : {},
-      debug: (str) => console.log('[STOMP]', str),
+      connectHeaders: jwt ? { Authorization: `Bearer ${jwt}` } : {},
+      // debug: (str) => console.log('[STOMP]', str),
       reconnectDelay: 5000,
+      heartbeatIncoming: 10000,
+      heartbeatOutgoing: 10000,
     });
 
     client.onConnect = () => {
       setConnected(true);
-      const dest = `/topic/rooms/${roomId}`;  // 백엔드와 동일 경로
-      console.log('[WS] subscribing ->', dest);
-
+      const dest = `/topic/rooms/${roomId}`;
       client.subscribe(dest, (frame) => {
         try {
           const payload = JSON.parse(frame.body);
-          console.log('[WS] message <-', payload);
-          setMessages((prev) => [...prev, normalize(payload)]);
-        } catch (e) {
-          console.warn('[WS] parse failed, raw:', frame.body);
+          setMessages((prev) => {
+            const msg = normalize(payload);
+            // 중복 방지(같은 id가 이미 있으면 무시)
+            if (msg.id && prev.some((p) => p.id === msg.id)) return prev;
+            return [...prev, msg];
+          });
+        } catch {
           setMessages((prev) => [...prev, normalize({ sender: 'system', content: frame.body })]);
         }
       });
     };
 
-    client.onStompError = (frame) => {
-      console.error('[WS] broker error', frame);
+    client.onStompError = () => {
+      // console.error('[WS] broker error', frame);
     };
 
     client.activate();
     clientRef.current = client;
 
     return () => {
-      if (client.active) client.deactivate();
-      clientRef.current = null;
       setConnected(false);
+      try { client.deactivate(); } catch {}
+      clientRef.current = null;
     };
-  }, [roomId]); // roomId 변경 시 재구독
+  }, [roomId]);
 
+  useEffect(() => {
+    if (!roomId) return;
+    let cancelled = false;
+
+    setActiveRoom(roomId);
+    (async () => {
+      try {
+        const { data } = await http.post(`/api/rooms/${encodeURIComponent(roomId)}/read`);
+        const friend = data?.friendUsername || null;
+        if (friend) {
+          peerRef.current = friend;
+          clearFriend(friend); // 로컬 배지 0
+        }
+      } catch (_) {}
+      if (cancelled) return;
+    })();
+
+    return () => {
+      cancelled = true;
+      setActiveRoom(null);
+      const friend = peerRef.current;
+      (async () => {
+        try {
+          await http.post(`/api/rooms/${encodeURIComponent(roomId)}/read`);
+        } catch (_) {}
+        if (friend) clearFriend(friend);
+      })();
+      setActiveRoom(null);
+    };
+
+  }, [roomId, setActiveRoom, clearFriend]);
+
+  // 자동 스크롤
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
@@ -110,11 +162,11 @@ export default function ChatRoomPage() {
     const body = text.trim();
     if (!body) return;
     try {
-      // 서버가 브로드캐스트를 해주므로 낙관적 추가는 생략(중복 방지)
+      // 서버가 브로드캐스트를 해주므로 낙관적 추가는 생략
       await http.post(`/api/rooms/${encodeURIComponent(roomId)}/send`, { message: body });
       setText('');
     } catch (e) {
-      console.error('[HTTP] send failed', e?.response?.data || e);
+      // console.error('[HTTP] send failed', e?.response?.data || e);
     }
   };
 

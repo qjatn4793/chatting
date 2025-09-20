@@ -3,13 +3,15 @@ import { Client } from '@stomp/stompjs';
 import SockJS from 'sockjs-client';
 import { useAuth } from './AuthContext';
 import { API_BASE_URL } from '../api/http';
+import { useNotifications } from '../hooks/useNotifications';
 
 /**
  * 전역 STOMP 연결. 단일 세션 킥(/user/queue/kick) 신호를 받으면 즉시 로그아웃.
  * 각 방의 실시간 메시지는 ChatRoomPage가 별도로 구독합니다.
  */
 export default function RealtimeProvider({ children }) {
-  const { token, logout } = useAuth();
+  const { token, userId, logout } = useAuth();
+  const { pushNotif } = useNotifications();
   const clientRef = useRef(null);
 
   useEffect(() => {
@@ -18,6 +20,11 @@ export default function RealtimeProvider({ children }) {
       if (clientRef.current && clientRef.current.active) clientRef.current.deactivate();
       clientRef.current = null;
       return;
+    }
+
+    // Notification 권한(한 번만 요청)
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission().catch(() => {});
     }
 
     const client = new Client({
@@ -36,6 +43,18 @@ export default function RealtimeProvider({ children }) {
       client.subscribe('/user/queue/kick', () => {
         logout();
       });
+
+      // 새 메세지 알림 구독
+      if (userId) {
+        client.subscribe(`/topic/chat-notify/${userId}`, (frame) => {
+          try {
+            const n = JSON.parse(frame.body); // { roomId, sender, preview, ts }
+            pushNotif(n);
+          } catch {
+            pushNotif({ preview: String(frame.body), ts: Date.now() });
+          }
+        });
+      }
     };
 
     client.activate();
