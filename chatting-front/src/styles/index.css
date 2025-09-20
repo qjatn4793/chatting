@@ -1,3 +1,22 @@
+/* src/styles/index.css 맨 위쪽 또는 공통 CSS에 추가 */
+html { -webkit-text-size-adjust: 100%; }
+
+/* iOS 자동 확대 방지: input/textarea에 최소 16px */
+input, textarea {
+  font-size: 16px;
+}
+
+/* 채팅 입력 바가 노치/홈바에 가려지지 않도록 */
+.chat__input {
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
+}
+
+/* (선택) 입력창 높이와 placeholder도 일관되게 */
+.chat__input input {
+  font-size: 16px;          /* 중요: iOS 확대 방지 */
+  line-height: 1.2;
+}
+
 /* ---- Reset & base ---- */
 *,
 *::before,

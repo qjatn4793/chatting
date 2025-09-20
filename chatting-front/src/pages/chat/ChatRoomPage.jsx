@@ -18,6 +18,7 @@ export default function ChatRoomPage() {
   const clientRef = useRef(null);
   const endRef = useRef(null);
   const peerRef = useRef(null); // DM 상태 캐시
+  const inputRef = useRef(null);
 
   const me = userId;
 
@@ -165,8 +166,18 @@ export default function ChatRoomPage() {
       // 서버가 브로드캐스트를 해주므로 낙관적 추가는 생략
       await http.post(`/api/rooms/${encodeURIComponent(roomId)}/send`, { message: body });
       setText('');
+      // 전송 후에도 키보드 유지
+      inputRef.current?.focus({ preventScroll: true });
     } catch (e) {
       // console.error('[HTTP] send failed', e?.response?.data || e);
+    }
+  };
+
+  const handleKeyDown = (e) => {
+    const composing = e.isComposing || e.nativeEvent?.isComposing;
+    if (!composing && e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      send();
     }
   };
 
@@ -193,12 +204,24 @@ export default function ChatRoomPage() {
 
       <div className="chat__input">
         <input
+          ref={inputRef}
           value={text}
           onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && send()}
+          onKeyDown={handleKeyDown}
           placeholder="메시지를 입력하세요"
+          inputMode="text"
+          autoComplete="off"
+          autoCorrect="on"
+          autoCapitalize="sentences"
         />
-        <button disabled={!connected || !text.trim()} onClick={send}>Send</button>
+        <button
+          type="button"
+          disabled={!connected || !text.trim()}
+          onMouseDown={(e) => e.preventDefault()} // 버튼이 포커스를 훔쳐서 blur 되는 것 방지
+          onClick={send}
+        >
+          Send
+        </button>
       </div>
     </div>
   );
