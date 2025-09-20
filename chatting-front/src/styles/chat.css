@@ -19,7 +19,7 @@
 
 * { box-sizing: border-box; }
 
-.chat {
+/* .chat {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
@@ -27,7 +27,7 @@
   color: var(--text);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-}
+} */
 
 /* ===== Header ===== */
 .chat__header {
@@ -113,7 +113,6 @@
   max-width: 100%;
   padding: 10px 12px;
   border-radius: 14px 14px 14px 6px;     /* left-tail look */
-  background: var(--bubble);
   border: var(--border);
   box-shadow: var(--shadow);
   line-height: 1.45;

@@ -43,7 +43,6 @@ input:focus, textarea:focus { border-color: #38bdf8; box-shadow: 0 0 0 4px rgba(
 
 /* Utilities */
 .error { color: #dc2626; margin-top: 8px; }
-.muted { color: #64748b; } /* slate-500 */
 .status {
   display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 8px;
   background: #94a3b8; /* off */
