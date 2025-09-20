@@ -3,14 +3,15 @@ import Stomp from 'stompjs';
 
 let client = null;
 
-export function connectWS(serverBase, onConnect, onError) {
+export function connectWS(serverBase, token, onConnect, onError) {
   const sock = new SockJS(`${serverBase}/ws`);
   client = Stomp.over(sock);
   client.heartbeat.outgoing = 10000;
   client.heartbeat.incoming = 0;
   client.debug = null; // 로그 줄이기
 
-  client.connect({}, () => onConnect && onConnect(client), (err) => onError && onError(err));
+  const headers = token ? { Authorization: `Bearer ${token}` } : {};
+  client.connect(headers, () => onConnect && onConnect?.(client), (err) => onError?.(err));
 }
 
 export function disconnectWS() {
