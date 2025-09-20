@@ -18,6 +18,7 @@ import com.realtime.chatting.login.entity.User;
 import com.realtime.chatting.login.repository.UserRepository;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 @Service
 @RequiredArgsConstructor
@@ -43,6 +44,7 @@ public class AuthService {
     public LoginResponse login(LoginRequest req) {
         User user = userRepository.findByUsername(req.username())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid credentials"));
+        
         if (!passwordEncoder.matches(req.password(), user.getPassword())) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid credentials");
         }

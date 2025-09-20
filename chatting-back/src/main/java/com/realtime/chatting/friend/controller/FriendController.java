@@ -49,6 +49,6 @@ public class FriendController {
 
     @DeleteMapping("/requests/{id}")
     public void cancel(@PathVariable("id") Long id, Authentication auth) {
-        friendService.decline(id, auth.getName());
+    	friendService.cancel(id, auth.getName());
     }
 }
