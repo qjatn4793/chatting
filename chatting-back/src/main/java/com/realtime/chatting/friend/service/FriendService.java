@@ -47,19 +47,26 @@ public class FriendService {
 
     @Transactional
     public FriendRequestDto sendRequest(String me, String target) {
-    	if (me.equals(target)) throw new IllegalArgumentException("자기 자신에게는 보낼 수 없습니다.");
+        if (me.equals(target)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "자기 자신에게는 보낼 수 없습니다.");
+        }
 
-        User meU = userRepo.findById(me).orElseThrow();
-        User tgU = userRepo.findById(target).orElseThrow();
+        User meU = userRepo.findById(me).orElseThrow(() ->
+            new ResponseStatusException(HttpStatus.UNAUTHORIZED, "인증이 유효하지 않습니다.")
+        );
+
+        User tgU = userRepo.findById(target).orElseThrow(() ->
+            new ResponseStatusException(HttpStatus.NOT_FOUND, "존재하지 않는 사용자입니다.")
+        );
 
         // 중복/역중복 및 이미 친구 방지
         requestRepo.findByRequester_UsernameAndReceiver_UsernameAndStatusIn(
                 me, target, List.of(FriendRequestStatus.PENDING, FriendRequestStatus.ACCEPTED)
-        ).ifPresent(x -> { throw new IllegalStateException("이미 요청했거나 친구입니다."); });
+        ).ifPresent(x -> { throw new ResponseStatusException(HttpStatus.CONFLICT, "이미 요청했거나 친구입니다."); });
 
         requestRepo.findByRequester_UsernameAndReceiver_UsernameAndStatusIn(
                 target, me, List.of(FriendRequestStatus.PENDING, FriendRequestStatus.ACCEPTED)
-        ).ifPresent(x -> { throw new IllegalStateException("상대가 이미 보냈거나 친구입니다."); });
+        ).ifPresent(x -> { throw new ResponseStatusException(HttpStatus.CONFLICT, "상대가 이미 보냈거나 친구입니다."); });
 
         FriendRequest saved = requestRepo.save(FriendRequest.builder()
                 .requester(meU)
@@ -68,7 +75,6 @@ public class FriendService {
                 .build());
 
         FriendRequestDto dto = toDto(saved);
-        // 실시간: 양쪽 목록 새로고침 신호
         messaging.convertAndSend("/topic/friend-requests/" + me, dto);
         messaging.convertAndSend("/topic/friend-requests/" + target, dto);
         return dto;
