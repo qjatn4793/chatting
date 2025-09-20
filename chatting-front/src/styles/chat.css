@@ -19,15 +19,15 @@
 
 * { box-sizing: border-box; }
 
-/* .chat {
+.chat {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
-  background: linear-gradient(180deg, var(--bg) 0%, #0a0f1a 100%);
-  color: var(--text);
+  /* background: linear-gradient(180deg, var(--bg) 0%, #0a0f1a 100%); */
+  /* color: var(--text); */
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-} */
+}
 
 /* ===== Header ===== */
 .chat__header {
