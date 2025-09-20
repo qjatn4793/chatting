@@ -41,7 +41,7 @@ export default function RealtimeProvider({ children }) {
     client.onConnect = () => {
       // 중복 로그인 킥 구독
       client.subscribe('/user/queue/kick', () => {
-        logout();
+        logout('다른 기기에서 로그인되어 현재 세션이 종료되었습니다.');
       });
 
       // 새 메세지 알림 구독

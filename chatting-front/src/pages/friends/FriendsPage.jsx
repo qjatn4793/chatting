@@ -1,10 +1,13 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import http from '../../api/http';
+import http, { API_BASE_URL } from '../../api/http';
 import '../../styles/friends.css';
 import RequestsPanel from './RequestsPanel';
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../hooks/useNotifications';
+import { Client } from '@stomp/stompjs';
+import SockJS from 'sockjs-client';
+
 
 export default function FriendsPage() {
   const [friends, setFriends] = useState([]);       // backend: List<String>
@@ -29,7 +32,11 @@ export default function FriendsPage() {
       const res = await http.get('/api/friends');
       setFriends(Array.isArray(res.data) ? res.data : []);
     } catch (e) {
-      setError(e?.response?.data?.message || '친구 목록을 불러오지 못했습니다.');
+      const status = e?.response?.status;
+      if ([401, 403, 419, 440].includes(status)) {
+        logout('세션이 만료되었거나 다른 기기에서 로그인되어 로그아웃됩니다.');
+        return;
+      }
     }
   };
 
@@ -71,7 +78,42 @@ export default function FriendsPage() {
 
   useEffect(() => { load(); }, []);
 
-  // (선택) 최근 활동 순 정렬: 미리보기 타임스탬프 desc, 없으면 원래 순서
+  // 실시간 친구 변경 이벤트 구독: /topic/friend-events/{userId}
+  useEffect(() => {
+    if (!userId) return;
+    const token = localStorage.getItem('jwt');
+    const client = new Client({
+      webSocketFactory: () => new SockJS(`${API_BASE_URL}/ws`),
+      connectHeaders: token ? { Authorization: `Bearer ${token}` } : {},
+      reconnectDelay: 3000,
+    });
+
+    client.onConnect = () => {
+      const dest = `/topic/friend-requests/${userId}`;
+      client.subscribe(dest, (frame) => {
+        // 백엔드에서 FriendRequestDto를 보내고 있음
+        // { id, requester, receiver, status, ... }
+        try {
+          const dto = JSON.parse(frame.body);
+          // 사실 status 체크 없이 항상 새로고침해도 OK
+          if (dto?.status === 'ACCEPTED' || dto?.status === 'DECLINED' || dto?.status === 'CANCELLED') {
+            load();
+          } else {
+            // 안전하게 항상 로드해도 됨
+            load();
+          }
+        } catch {
+          // 파싱 실패해도 보수적으로 갱신
+          load();
+        }
+      });
+    };
+
+    client.activate();
+    return () => { client.deactivate(); };
+  }, [userId]);
+
+  // 최근 활동 순 정렬: 미리보기 타임스탬프 desc, 없으면 원래 순서
   const sortedFriends = useMemo(() => {
     return [...friends].sort((a, b) => {
       const ta = getPreviewTime(a) || 0;
