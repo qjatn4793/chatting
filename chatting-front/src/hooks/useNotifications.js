@@ -1,14 +1,41 @@
-import { createContext, useCallback, useContext, useMemo, useState } from 'react';
+import { createContext, use, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
 const NotifCtx = createContext(null);
 
+const LS_KEYS = {
+    unread: 'notif.unreadByFriend',
+    preview: 'notif.previewByFriend',
+    previewTs: 'notif.previewTime',
+};
+
 export function NotificationsProvider({ children }) {
+  const [unreadByFriend, setUnreadByFriend] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(LS_KEYS.unread)) || {}; } catch { return {}; }
+  });
+
+  const [previewByFriend, setPreviewByFriend] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(LS_KEYS.preview)) || {}; } catch { return {}; }
+  });
+
+  const [previewTime, setPreviewTime] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(LS_KEYS.previewTs)) || {}; } catch { return {}; }
+  });
+
   const [unreadTotal, setUnreadTotal] = useState(0);
-  const [unreadByFriend, setUnreadByFriend] = useState({});
-  const [previewByFriend, setPreviewByFriend] = useState({}); // 최근 메시지 미리보기
-  const [previewTime, setPreviewTime] = useState({});         // 정렬/표시용 타임스탬프
   const [activeRoom, setActiveRoom] = useState(null);   // 현재 보고 있는 방
   const [last, setLast] = useState(null);
+
+  useEffect(() => {
+    try { localStorage.setItem(LS_KEYS.unread, JSON.stringify(unreadByFriend)); } catch {}
+  }, [unreadByFriend]);
+
+  useEffect(() => {
+    try { localStorage.setItem(LS_KEYS.preview, JSON.stringify(previewByFriend)); } catch {}
+  }, [previewByFriend]);
+
+  useEffect(() => {
+    try { localStorage.setItem(LS_KEYS.previewTs, JSON.stringify(previewTime)); } catch {}
+  }, [previewTime]);
 
   // 서버에서 내려준 초기 요약 반영
   const setBulkUnread = useCallback((entries) => {
@@ -39,7 +66,6 @@ export function NotificationsProvider({ children }) {
   const pushNotif = useCallback((n) => {
     // 현재 열려있는 방이면 카운트하지 않음
     if (n?.roomId && n.roomId === activeRoom) return;
-
     setLast(n);
     const friend = n?.sender;
     if (!friend) return;
@@ -75,6 +101,9 @@ export function NotificationsProvider({ children }) {
   const clearAll = useCallback(() => {
     setUnreadByFriend({});
     setUnreadTotal(0);
+    try { 
+        localStorage.removeItem(LS_KEYS.unread);
+    } catch {}
   }, []);
 
   const getUnread = useCallback((friend) => unreadByFriend[friend] || 0, [unreadByFriend]);
