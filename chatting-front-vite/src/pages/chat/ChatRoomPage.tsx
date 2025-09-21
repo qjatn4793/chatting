@@ -72,7 +72,7 @@ function sameUser(meKey: string | undefined | null, msg: UiMsg): boolean {
 export default function ChatRoomPage(): React.ReactElement {
   const { roomId } = useParams<{ roomId: string }>()
   const nav = useNavigate()
-  const { userId } = useAuth() as { userId?: string | null }
+  const { userId, logout } = useAuth() as { userId?: string | null; logout: (reason?: string)=>void }
   const { setActiveRoom, clearFriend } = useNotifications()
 
   const meKey = useMemo(() => toStr(userId)?.toLowerCase() ?? '', [userId])
@@ -86,6 +86,30 @@ export default function ChatRoomPage(): React.ReactElement {
   const inputRef = useRef<HTMLInputElement | null>(null)
   const inputWrapRef = useRef<HTMLDivElement | null>(null)
   const peerRef = useRef<string | null>(null)
+
+  /** ---- 세션 가드: 진입 시 userId/WS 연결 확인 ---- */
+  useEffect(() => {
+    const graceMs = 1500
+
+    // userId 없으면 즉시 로그아웃 → /login
+    if (!userId) {
+      logout('no userId')
+      nav('/login', { replace: true })
+      return
+    }
+
+    // 토큰 여부는 AuthProvider에서 관리된다고 가정. 연결 보장 시도
+    ws.ensureConnected()
+
+    const t = window.setTimeout(() => {
+      if (!ws.isConnected()) {
+        logout('ws disconnected')
+        nav('/login', { replace: true })
+      }
+    }, graceMs)
+
+    return () => window.clearTimeout(t)
+  }, [userId, logout, nav])
 
   /** ---- iOS 키보드 애니메이션 억제/정리 ---- */
   const suppressRef = useRef(false)           // 키보드 애니메이션 동안 true

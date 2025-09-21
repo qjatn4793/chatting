@@ -1,62 +1,50 @@
-import React, { createContext, useContext, useEffect, useMemo, useState, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { getLoginIdFromToken } from '@/utils/jwt'
+import React, { createContext, useContext, useEffect, useMemo, useState } from 'react'
+import { ws } from '@/ws'
 
 type AuthCtx = {
   token: string | null
   userId: string | null
-  isAuthed: boolean
-  login: (jwt: string) => void
+  login: (jwt: string, userId: string) => void
   logout: (reason?: string) => void
 }
 
 const AuthContext = createContext<AuthCtx | null>(null)
 
-const LS_TOKEN_KEY = 'jwt' // FriendsPage 등에서 이 키로 읽으므로 통일!
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const [token, setToken] = useState<string | null>(() => localStorage.getItem('jwt'))
+  const [userId, setUserId] = useState<string | null>(() => localStorage.getItem('userId'))
 
-export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const nav = useNavigate()
-
-  const [token, setToken] = useState<string | null>(null)
-  const [userId, setUserId] = useState<string | null>(null)
-
-  // 초기 부팅: localStorage에서 불러오기
+  // 토큰 변경 → WS와 동기화
   useEffect(() => {
-    const saved = localStorage.getItem(LS_TOKEN_KEY)
-    if (saved) {
-      setToken(saved)
-      setUserId(getLoginIdFromToken(saved))
+    ws.setAuthToken(token)
+    if (token) {
+      ws.ensureConnected() // 토큰 있으면 연결 보장
+    } else {
+      ws.disconnect()
     }
-  }, [])
-
-  // 토큰 변경 시 userId 동기화
-  useEffect(() => {
-    setUserId(getLoginIdFromToken(token))
   }, [token])
 
-  const login = useCallback((jwt: string) => {
-    try { localStorage.setItem(LS_TOKEN_KEY, jwt) } catch {}
+  const login = (jwt: string, uid: string) => {
+    localStorage.setItem('jwt', jwt)
+    localStorage.setItem('userId', uid)
     setToken(jwt)
-    setUserId(getLoginIdFromToken(jwt))
-  }, [])
+    setUserId(uid)
+  }
 
-  const logout = useCallback((reason?: string) => {
-    try { localStorage.removeItem(LS_TOKEN_KEY) } catch {}
+  const logout = (reason?: string) => {
+    try { console.info('[logout]', reason ?? '') } catch {}
+    localStorage.removeItem('jwt')
+    localStorage.removeItem('userId')
     setToken(null)
     setUserId(null)
-    // 필요하면 알림/세션 정리 이벤트도 여기서 발생
-    nav('/auth', { replace: true, state: reason ? { reason } : undefined })
-  }, [nav])
+    ws.setAuthToken(null)
+    ws.disconnect()
+    // 라우팅은 각 페이지에서 처리(가드 훅이 네비게이션 담당)
+  }
 
-  const value = useMemo<AuthCtx>(() => ({
-    token, userId, isAuthed: !!token, login, logout
-  }), [token, userId, login, logout])
+  const value = useMemo(() => ({ token, userId, login, logout }), [token, userId])
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 
-export const useAuth = (): AuthCtx => {
-  const ctx = useContext(AuthContext)
-  if (!ctx) throw new Error('useAuth must be used within <AuthProvider>')
-  return ctx
-}
+export const useAuth = () => useContext(AuthContext)!
