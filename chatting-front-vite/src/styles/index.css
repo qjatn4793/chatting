@@ -1,6 +1,6 @@
 
 /* src/styles/index.css 맨 위쪽 또는 공통 CSS에 추가 */
-html { -webkit-text-size-adjust: 100%; }
+html { -webkit-text-size-adjust: 100%; scroll-behavior: auto !important; }
 
 /* iOS 자동 확대 방지: input/textarea에 최소 16px */
 input, textarea {
