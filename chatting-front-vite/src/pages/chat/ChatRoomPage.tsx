@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useRef, useState, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import http from '@/api/http'
 import '@/styles/chat.css'
@@ -8,10 +8,11 @@ import { ws } from '@/ws' // 전역 WS 싱글톤
 
 type RawMsg = {
   id?: string
+  senderId?: string | number
   sender?: string
-  from?: string
   senderUsername?: string
   user?: string
+  from?: string
   message?: string
   text?: string
   content?: string
@@ -22,10 +23,50 @@ type RawMsg = {
 
 type UiMsg = {
   id: string
-  sender: string
+  senderId?: string
+  sender?: string
+  senderUsername?: string
+  user?: string
+  from?: string
   content: string
   createdAt: string | number | null
-  mine: boolean
+}
+
+function toStr(x: unknown): string | undefined {
+  if (x === null || x === undefined) return undefined
+  const s = String(x).trim()
+  return s.length ? s : undefined
+}
+
+function normalize(raw: RawMsg): UiMsg {
+  const id = raw.id ?? crypto.randomUUID()
+  const content =
+    toStr(raw.message) ??
+    toStr(raw.text) ??
+    toStr(raw.content) ??
+    toStr(raw.body) ??
+    ''
+  const createdAt = (raw.createdAt as any) ?? (raw.time as any) ?? null
+
+  return {
+    id,
+    senderId: toStr(raw.senderId),
+    sender: toStr(raw.sender),
+    senderUsername: toStr(raw.senderUsername),
+    user: toStr(raw.user),
+    from: toStr(raw.from),
+    content,
+    createdAt,
+  }
+}
+
+/** 사용자 동일성 판단 */
+function sameUser(meKey: string | undefined | null, msg: UiMsg): boolean {
+  const key = toStr(meKey)?.toLowerCase()
+  if (!key) return false
+  const candidates = [msg.senderId, msg.sender, msg.senderUsername, msg.user, msg.from]
+  for (const c of candidates) if (toStr(c)?.toLowerCase() === key) return true
+  return false
 }
 
 export default function ChatRoomPage(): React.ReactElement {
@@ -34,47 +75,134 @@ export default function ChatRoomPage(): React.ReactElement {
   const { userId } = useAuth() as { userId?: string | null }
   const { setActiveRoom, clearFriend } = useNotifications()
 
+  const meKey = useMemo(() => toStr(userId)?.toLowerCase() ?? '', [userId])
+
   const [messages, setMessages] = useState<UiMsg[]>([])
   const [text, setText] = useState('')
   const [connected, setConnected] = useState<boolean>(ws.isConnected())
+
+  const listRef = useRef<HTMLDivElement | null>(null)
   const endRef = useRef<HTMLDivElement | null>(null)
-  const peerRef = useRef<string | null>(null)
   const inputRef = useRef<HTMLInputElement | null>(null)
+  const inputWrapRef = useRef<HTMLDivElement | null>(null)
+  const peerRef = useRef<string | null>(null)
 
-  const me = userId ?? ''
+  /** ---- iOS 키보드 애니메이션 억제/정리 ---- */
+  const suppressRef = useRef(false)           // 키보드 애니메이션 동안 true
+  const settleTimerRef = useRef<number | null>(null)
+  const rafTokenRef = useRef<number | null>(null)
 
-  const isMine = (m: { sender?: string }): boolean => {
-    const sender = (m.sender ?? '').toString()
-    if (!me || !sender) return false
-    return sender.toLowerCase() === me.toString().toLowerCase()
+  const beginKeyboardPhase = (ms = 450) => {
+    suppressRef.current = true
+    if (settleTimerRef.current) window.clearTimeout(settleTimerRef.current)
+    settleTimerRef.current = window.setTimeout(() => {
+      suppressRef.current = false
+      scrollToEnd()
+      document.documentElement.classList.remove('kb-open')
+    }, ms)
+    document.documentElement.classList.add('kb-open')
   }
 
-  const normalize = (m: RawMsg): UiMsg => {
-    const id = m.id ?? crypto.randomUUID()
-    const sender = m.sender || m.from || m.senderUsername || m.user || 'unknown'
-    const content = m.message || m.text || m.content || m.body || ''
-    const createdAt = (m.createdAt as any) || (m.time as any) || null
-    const base = { id, sender: String(sender), content: String(content), createdAt }
-    return { ...base, mine: isMine(base) }
+  /** 즉시 맨 아래로 (fallback 포함) */
+  const scrollToEnd = () => {
+    const el = endRef.current
+    if (!el) return
+    try {
+      el.scrollIntoView({ behavior: 'auto', block: 'end' })
+    } catch {
+      const list = listRef.current
+      if (list) list.scrollTop = list.scrollHeight
+    }
   }
 
-  // 방 진입/이동 시: 읽음 처리 + 현재 방 지정 + 히스토리 로드
+  /** visualViewport 기반 높이/키보드 변수 갱신 */
+  const setViewportVars = () => {
+    const root = document.documentElement.style
+    const vv: any = (window as any).visualViewport
+    if (vv && typeof vv.height === 'number') {
+      root.setProperty('--vvh', `${vv.height}px`)
+      const kb = Math.max(0, (window.innerHeight || 0) - vv.height)
+      root.setProperty('--kb', `${kb}px`)
+    } else {
+      root.setProperty('--vvh', `${window.innerHeight}px`)
+      root.setProperty('--kb', `0px`)
+    }
+  }
+
+  /** 입력바 실제 높이 1회/회전 시만 측정 */
+  const setInputHeightVar = () => {
+    const h = Math.round(inputWrapRef.current?.getBoundingClientRect().height ?? 56)
+    document.documentElement.style.setProperty('--input-h', `${h}px`)
+  }
+
+  /** 입력 포커스/블러 */
+  const onInputFocus = () => beginKeyboardPhase(450)
+  const onInputBlur = () => {
+    suppressRef.current = false
+    if (settleTimerRef.current) window.clearTimeout(settleTimerRef.current)
+    document.documentElement.classList.remove('kb-open')
+  }
+
+  /** mount: 초기 세팅 */
+  useEffect(() => {
+    setViewportVars()
+    // 입력바 높이는 초기 1회 + 회전 시만 갱신
+    requestAnimationFrame(setInputHeightVar)
+
+    const vv: any = (window as any).visualViewport
+
+    // visualViewport 이벤트: rAF 스로틀 + passive + 억제 가드
+    const onVv = () => {
+      if (rafTokenRef.current) return
+      rafTokenRef.current = requestAnimationFrame(() => {
+        rafTokenRef.current = null
+        setViewportVars()
+        if (!suppressRef.current) scrollToEnd()
+      })
+    }
+
+    if (vv) {
+      vv.addEventListener('resize', onVv, { passive: true })
+      vv.addEventListener('scroll', onVv, { passive: true })
+    }
+
+    const onResize = () => {
+      setViewportVars()
+      setInputHeightVar()
+      if (!suppressRef.current) scrollToEnd()
+    }
+
+    window.addEventListener('resize', onResize, { passive: true })
+    window.addEventListener('orientationchange', onResize, { passive: true })
+
+    return () => {
+      if (vv) {
+        vv.removeEventListener('resize', onVv as any)
+        vv.removeEventListener('scroll', onVv as any)
+      }
+      window.removeEventListener('resize', onResize as any)
+      window.removeEventListener('orientationchange', onResize as any)
+      if (rafTokenRef.current) cancelAnimationFrame(rafTokenRef.current)
+      if (settleTimerRef.current) window.clearTimeout(settleTimerRef.current)
+      document.documentElement.classList.remove('kb-open')
+    }
+  }, [])
+
+  /** 방 진입/이동: 읽음 + 히스토리 */
   useEffect(() => {
     if (!roomId) return
     let cancelled = false
-
     setActiveRoom(roomId)
 
     ;(async () => {
       try {
-        // baseURL에 /api가 포함되어 있으므로 /rooms 로 호출
         const { data } = await http.post(`/rooms/${encodeURIComponent(roomId)}/read`)
         const friend = data?.friendUsername || null
         if (friend) {
           peerRef.current = friend
-          clearFriend(friend) // 로컬 배지 0
+          clearFriend(friend)
         }
-      } catch (_) {}
+      } catch {}
 
       if (cancelled) return
 
@@ -82,7 +210,8 @@ export default function ChatRoomPage(): React.ReactElement {
         const res = await http.get(`/rooms/${encodeURIComponent(roomId)}/messages?limit=50`)
         const list = Array.isArray(res.data) ? res.data.map(normalize) : []
         setMessages(list)
-      } catch (_) {}
+        requestAnimationFrame(scrollToEnd)
+      } catch {}
     })()
 
     return () => {
@@ -97,17 +226,16 @@ export default function ChatRoomPage(): React.ReactElement {
     }
   }, [roomId, setActiveRoom, clearFriend])
 
-  // WebSocket 구독 (전역 싱글톤 사용)
+  /** WebSocket 구독 */
   useEffect(() => {
     if (!roomId) return
 
-    // 연결 이벤트: true로 표시
     const markConnected = () => setConnected(true)
+    const markDisconnected = () => setConnected(false)
     ws.onConnect(markConnected)
-    // 현재 연결 상태 반영
+    ws.onDisconnect(markDisconnected)
     setConnected(ws.isConnected())
 
-    // 방 토픽 구독
     const unsub = ws.subscribe(`/topic/rooms/${roomId}`, (payload: any) => {
       try {
         setMessages((prev) => {
@@ -115,35 +243,47 @@ export default function ChatRoomPage(): React.ReactElement {
           if (msg.id && prev.some((p) => p.id === msg.id)) return prev
           return [...prev, msg]
         })
+        requestAnimationFrame(() => { if (!suppressRef.current) scrollToEnd() })
       } catch {
-        setMessages((prev) => [
-          ...prev,
-          normalize({ sender: 'system', content: String(payload) } as any),
-        ])
+        setMessages((prev) => [...prev, normalize({ sender: 'system', message: String(payload) } as any)])
+        requestAnimationFrame(() => { if (!suppressRef.current) scrollToEnd() })
       }
     })
 
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') {
+        ws.ensureConnected()
+        scrollToEnd()
+      }
+    }
+    const onOnline = () => { ws.ensureConnected() }
+
+    document.addEventListener('visibilitychange', onVisible, { passive: true } as any)
+    window.addEventListener('online', onOnline, { passive: true } as any)
+    window.addEventListener('pageshow', onOnline, { passive: true } as any)
+
     return () => {
       unsub()
-      // 페이지 이탈 시 UI상 연결 표시는 내려둠(실제 소켓은 RealtimeProvider가 관리)
-      setConnected(false)
+      ws.offConnect(markConnected)
+      ws.offDisconnect(markDisconnected)
+      document.removeEventListener('visibilitychange', onVisible as any)
+      window.removeEventListener('online', onOnline as any)
+      window.removeEventListener('pageshow', onOnline as any)
     }
   }, [roomId])
 
-  // 자동 스크롤
-  useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+  /** 메시지 변경 시 하단 정렬 (억제 중이면 skip) */
+  useEffect(() => { if (!suppressRef.current) scrollToEnd() }, [messages])
 
   const send = async () => {
     const body = text.trim()
     if (!body || !roomId) return
     try {
-      // 서버 브로드캐스트에 의존(낙관적 추가 없음)
       await http.post(`/rooms/${encodeURIComponent(roomId)}/send`, { message: body })
       setText('')
       inputRef.current?.focus({ preventScroll: true })
-    } catch (_) {}
+      setTimeout(() => { if (!suppressRef.current) scrollToEnd() }, 10)
+    } catch {}
   }
 
   const handleKeyDown: React.KeyboardEventHandler<HTMLInputElement> = (e) => {
@@ -159,28 +299,35 @@ export default function ChatRoomPage(): React.ReactElement {
       <div className="chat__header">
         <button onClick={() => nav('/friends')}>← Friends</button>
         <h2>Room: {roomId}</h2>
-        <span className="me">나: {me || '알 수 없음'}</span>
+        <span className="me">나: {toStr(userId) || '알 수 없음'}</span>
         <span className="muted">
-          {connected ? `connected${me ? ' as ' + me : ''}` : 'connecting...'}
+          {connected ? `connected${toStr(userId) ? ' as ' + toStr(userId) : ''}` : 'connecting...'}
         </span>
       </div>
 
-      <div className="chat__list">
-        {messages.map((m) => (
-          <div key={m.id} className={`chat__msg ${m.mine ? 'me' : ''}`}>
-            <div className="chat__sender">{m.sender}</div>
-            <div className="chat__bubble">{m.content}</div>
-          </div>
-        ))}
-        <div ref={endRef} />
+      <div className="chat__list" id="chat-list" ref={listRef}>
+        {messages.map((m) => {
+          const mine = sameUser(meKey, m)
+          return (
+            <div key={m.id} className={`chat__msg ${mine ? 'me' : ''}`}>
+              <div className="chat__sender">
+                {m.senderUsername ?? m.sender ?? m.user ?? m.from ?? m.senderId ?? 'unknown'}
+              </div>
+              <div className="chat__bubble">{m.content}</div>
+            </div>
+          )
+        })}
+        <div ref={endRef} id="chat-end-sentinel" />
       </div>
 
-      <div className="chat__input">
+      <div className="chat__input" ref={inputWrapRef}>
         <input
           ref={inputRef}
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={handleKeyDown}
+          onFocus={onInputFocus}
+          onBlur={onInputBlur}
           placeholder="메시지를 입력하세요"
           inputMode="text"
           autoComplete="off"

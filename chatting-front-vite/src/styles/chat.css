@@ -15,16 +15,21 @@
   --bubble-me: #2a62ff1a;          /* brand tint */
   --border: 1px solid #1d2740;
   --shadow: 0 8px 24px rgba(3, 10, 26, 0.3);
+
+  /* 키보드/뷰포트 대응용 동적 변수 */
+  --vvh: 100dvh;   /* 실제 보이는 viewport height (JS로 갱신) */
+  --kb: 0px;       /* (선택) 키보드 오버레이 추정 높이 */
+  --input-h: 56px; /* 입력바 실측 높이 (JS로 갱신) */
 }
 
 * { box-sizing: border-box; }
 
+/* 레이아웃이 실제 보이는 높이에 맞춰 수축/확장되도록 height와 min-height 둘 다 지정 */
 .chat {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
-  /* background: linear-gradient(180deg, var(--bg) 0%, #0a0f1a 100%); */
-  /* color: var(--text); */
+  height: var(--vvh);
+  min-height: var(--vvh);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -75,11 +80,13 @@
 .chat__list {
   flex: 1;
   overflow: auto;
-  padding: 16px 18px 120px; /* bottom space for input bar */
+  /* 입력바 + 약간의 여유를 실제 높이에 맞춰 확보 */
+  padding: 16px 18px calc(var(--input-h) + 32px);
   display: flex;
   flex-direction: column;
   gap: 12px;
-  scroll-behavior: smooth;
+  scroll-behavior: auto;
+  -webkit-overflow-scrolling: auto;
 }
 
 /* ===== Message Item (left/right alignment) ===== */
@@ -127,10 +134,12 @@
 }
 
 /* ===== Input Bar ===== */
+/* sticky로 충분하지만, 모바일에서 safe-area를 고려해 하단 여백 포함 */
 .chat__input {
   position: sticky;
   bottom: 0;
   padding: 12px;
+  padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
   background: linear-gradient(
     180deg,
     transparent 0%,
@@ -142,24 +151,25 @@
   gap: 10px;
   border-top: var(--border);
   backdrop-filter: blur(6px);
+  z-index: 20;
 }
 
 .chat__input input {
   width: 100%;
   height: 44px;
+  font-size: 16px;
+  line-height: 1.2;
+  -webkit-text-size-adjust: 100%;
   padding: 0 14px;
   border-radius: 12px;
   background: var(--panel-2);
   border: var(--border);
   color: var(--text);
   outline: none;
-  transition: box-shadow .2s ease, border-color .2s ease;
+  transition: none;
 }
 .chat__input input::placeholder { color: #789; }
-.chat__input input:focus {
-  border-color: #2a62ff66;
-  box-shadow: 0 0 0 3px #2a62ff22;
-}
+.chat__input input:focus { border-color: #2a62ff66; box-shadow: none; }
 
 .chat__input button {
   height: 44px;
@@ -194,7 +204,7 @@
 
 /* ===== Small screens ===== */
 @media (max-width: 640px) {
-  .chat__list { padding: 12px 12px 96px; }
+  .chat__list { padding: 12px 12px calc(var(--input-h) + 24px); }
   .chat__bubble { font-size: 14px; }
   .chat__header { padding: 12px; }
 }
