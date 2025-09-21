@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import http from '@/api/http'
+import http, { API_BASE_URL } from '@/api/http'
 import '@/styles/friends.css'
 import RequestsPanel from './RequestsPanel'
 import { useAuth } from '@/context/AuthContext'
@@ -25,28 +25,6 @@ export default function FriendsPage(): JSX.Element {
     setActiveRoom,
   } = useNotifications() as any
 
-  /** ---- 세션 가드: 진입 시 userId/WS 연결 확인 ---- */
-  useEffect(() => {
-    const graceMs = 1500
-
-    if (!userId) {
-      logout?.('no userId')
-      nav('/login', { replace: true })
-      return
-    }
-
-    ws.ensureConnected()
-
-    const t = window.setTimeout(() => {
-      if (!ws.isConnected()) {
-        logout?.('ws disconnected')
-        nav('/login', { replace: true })
-      }
-    }, graceMs)
-
-    return () => window.clearTimeout(t)
-  }, [userId, logout, nav])
-
   const load = async () => {
     try {
       const res = await http.get<string[]>('/friends')
@@ -54,8 +32,7 @@ export default function FriendsPage(): JSX.Element {
     } catch (e: any) {
       const status = e?.response?.status
       if ([401, 403, 419, 440].includes(status)) {
-        logout?.('세션 만료 또는 중복 로그인')
-        nav('/login', { replace: true })
+        logout?.('세션이 만료되었거나 다른 기기에서 로그인되어 로그아웃됩니다.')
         return
       }
       setError(e?.response?.data?.message || '목록을 불러오지 못했습니다.')
@@ -124,9 +101,7 @@ export default function FriendsPage(): JSX.Element {
           <span className="me__label">로그인:</span>
           <strong className="me__name">{userId || '알 수 없음'}</strong>
         </div>
-        <button className="btn btn--logout" onClick={() => { logout?.(); nav('/login', { replace: true }) }}>
-          로그아웃
-        </button>
+        <button className="btn btn--logout" onClick={() => logout?.()}>로그아웃</button>
       </div>
 
       <h2>친구</h2>
