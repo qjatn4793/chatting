@@ -1,0 +1,162 @@
+import React, { useEffect, useRef, useState } from 'react'
+import http, { API_BASE_URL } from '@/api/http'
+import { useAuth } from '@/context/AuthContext'
+import { Client, type StompSubscription } from '@stomp/stompjs'
+import SockJS from 'sockjs-client'
+
+const SOCK_PATH = import.meta.env.VITE_SOCKJS_PATH || '/ws'
+
+type Req = {
+  id: string | number
+  status?: string
+  sender?: string
+  from?: string
+  fromUser?: string
+  requester?: string
+  senderUsername?: string
+  receiver?: string
+  to?: string
+  toUser?: string
+  receiverUsername?: string
+  targetUsername?: string
+}
+
+export default function RequestsPanel(): JSX.Element {
+  const [incoming, setIncoming] = useState<Req[]>([])
+  const [outgoing, setOutgoing] = useState<Req[]>([])
+  const [err, setErr] = useState('')
+  const [busyId, setBusyId] = useState<string | number | null>(null)
+  const { userId } = useAuth() as any
+
+  const wsRef = useRef<Client | null>(null)
+  const subsRef = useRef<StompSubscription[]>([])
+
+  const load = async () => {
+    try {
+      const [inc, out] = await Promise.all([
+        http.get<Req[]>('/friends/requests/incoming').catch(() => ({ data: [] as Req[] })),
+        http.get<Req[]>('/friends/requests/outgoing').catch(() => ({ data: [] as Req[] })),
+      ])
+      setIncoming(inc.data ?? [])
+      setOutgoing(out.data ?? [])
+    } catch (e: any) {
+      setErr(e?.response?.data?.message || '요청 목록을 불러오지 못했습니다.')
+    }
+  }
+
+  useEffect(() => { load() }, [])
+
+  // 실시간 구독
+  useEffect(() => {
+    if (!userId) return
+
+    const token = localStorage.getItem('jwt') || undefined
+    const client = new Client({
+      webSocketFactory: () => new SockJS(SOCK_PATH),
+      connectHeaders: token ? { Authorization: `Bearer ${token}` } : {},
+      reconnectDelay: 4000,
+      debug: () => {},
+    })
+
+    client.onConnect = () => {
+      const dest = `/topic/friend-requests/${userId}`
+      const sub = client.subscribe(dest, () => load())
+      subsRef.current = [sub]
+    }
+
+    client.onStompError = () => {}
+
+    client.activate()
+    wsRef.current = client
+
+    return () => {
+      subsRef.current.forEach(s => { try { s?.unsubscribe() } catch {} })
+      subsRef.current = []
+      if (client.active) client.deactivate()
+      wsRef.current = null
+    }
+  }, [userId])
+
+  const getSender = (r: Req) =>
+    r.sender || r.from || r.fromUser || r.requester || r.senderUsername || ''
+  const getReceiver = (r: Req) =>
+    r.receiver || r.to || r.toUser || r.receiverUsername || r.targetUsername || ''
+
+  const accept = async (id: Req['id']) => {
+    setBusyId(id)
+    try {
+      await http.post(`/friends/requests/${id}/accept`)
+      await load()
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  const decline = async (id: Req['id']) => {
+    setBusyId(id)
+    try {
+      await http.post(`/friends/requests/${id}/decline`)
+      await load()
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  const cancel = async (id: Req['id']) => {
+    setBusyId(id)
+    try {
+      await http.delete(`/friends/requests/${id}`)
+      await load()
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  return (
+    <div className="requests">
+      <h3>친구 요청</h3>
+      {err && <p className="error">{err}</p>}
+
+      <div className="requests__cols">
+        {/* 받은 요청 */}
+        <section>
+          <h4>받은 요청</h4>
+          {incoming.length === 0 && <div className="muted">받은 요청이 없습니다.</div>}
+          {incoming.map((r) => (
+            <div key={`in-${r.id}`} className="req">
+              <span>
+                <strong>{getSender(r)}</strong> → {getReceiver(r)}
+              </span>
+              <span className="muted">{r.status}</span>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={() => accept(r.id)} disabled={busyId === r.id}>수락</button>
+                <button onClick={() => decline(r.id)} disabled={busyId === r.id} style={{ background: '#e11d48' }}>
+                  거절
+                </button>
+              </div>
+            </div>
+          ))}
+        </section>
+
+        {/* 보낸 요청 */}
+        <section>
+          <h4>보낸 요청</h4>
+          {outgoing.length === 0 && <div className="muted">보낸 요청이 없습니다.</div>}
+          {outgoing.map((r) => (
+            <div key={`out-${r.id}`} className="req">
+              <span>
+                <strong>{getSender(r)}</strong> → {getReceiver(r)}
+              </span>
+              <span className="muted">{r.status}</span>
+              <div>
+                <button onClick={() => cancel(r.id)} disabled={busyId === r.id} style={{ background: '#475569' }}>
+                  취소
+                </button>
+              </div>
+            </div>
+          ))}
+        </section>
+      </div>
+    </div>
+  )
+}
