@@ -1,8 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import http, { API_BASE_URL } from '@/api/http'
 import { useAuth } from '@/context/AuthContext'
-import { Client, type StompSubscription } from '@stomp/stompjs'
-import SockJS from 'sockjs-client'
+import { ws } from '@/ws'
 
 const SOCK_PATH = import.meta.env.VITE_SOCKJS_PATH || '/ws'
 
@@ -28,9 +27,6 @@ export default function RequestsPanel(): JSX.Element {
   const [busyId, setBusyId] = useState<string | number | null>(null)
   const { userId } = useAuth() as any
 
-  const wsRef = useRef<Client | null>(null)
-  const subsRef = useRef<StompSubscription[]>([])
-
   const load = async () => {
     try {
       const [inc, out] = await Promise.all([
@@ -49,32 +45,10 @@ export default function RequestsPanel(): JSX.Element {
   // 실시간 구독
   useEffect(() => {
     if (!userId) return
-
-    const token = localStorage.getItem('jwt') || undefined
-    const client = new Client({
-      webSocketFactory: () => new SockJS(SOCK_PATH),
-      connectHeaders: token ? { Authorization: `Bearer ${token}` } : {},
-      reconnectDelay: 4000,
-      debug: () => {},
+    const unsub = ws.subscribe(`/topic/friend-requests/${userId}`, () => {
+      load()
     })
-
-    client.onConnect = () => {
-      const dest = `/topic/friend-requests/${userId}`
-      const sub = client.subscribe(dest, () => load())
-      subsRef.current = [sub]
-    }
-
-    client.onStompError = () => {}
-
-    client.activate()
-    wsRef.current = client
-
-    return () => {
-      subsRef.current.forEach(s => { try { s?.unsubscribe() } catch {} })
-      subsRef.current = []
-      if (client.active) client.deactivate()
-      wsRef.current = null
-    }
+    return () => unsub()
   }, [userId])
 
   const getSender = (r: Req) =>

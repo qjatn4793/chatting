@@ -1,185 +1,158 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import SockJS from 'sockjs-client';
-import { Client } from '@stomp/stompjs';
-import http, { API_BASE_URL } from '../../api/http';
-import '../../styles/chat.css';
-import { useAuth } from '../../context/AuthContext';
-import { useNotifications } from '../../hooks/useNotifications';
+import React, { useEffect, useRef, useState } from 'react'
+import { useParams, useNavigate } from 'react-router-dom'
+import http from '@/api/http'
+import '@/styles/chat.css'
+import { useAuth } from '@/context/AuthContext'
+import { useNotifications } from '@/hooks/useNotifications'
+import { ws } from '@/ws' // 전역 WS 싱글톤
 
-export default function ChatRoomPage() {
-  const { roomId } = useParams();
-  const nav = useNavigate();
-  const { userId } = useAuth();
-  const { setActiveRoom, clearFriend } = useNotifications(); // 현재 방 지정(알림 카운트 제외)
-  const [messages, setMessages] = useState([]);
-  const [text, setText] = useState('');
-  const [connected, setConnected] = useState(false);
-  const clientRef = useRef(null);
-  const endRef = useRef(null);
-  const peerRef = useRef(null); // DM 상태 캐시
-  const inputRef = useRef(null);
+type RawMsg = {
+  id?: string
+  sender?: string
+  from?: string
+  senderUsername?: string
+  user?: string
+  message?: string
+  text?: string
+  content?: string
+  body?: string
+  createdAt?: string | number
+  time?: string | number
+}
 
-  const me = userId;
+type UiMsg = {
+  id: string
+  sender: string
+  content: string
+  createdAt: string | number | null
+  mine: boolean
+}
 
-  const isMine = (m) => {
-    const sender =
-      m.sender || m.from || m.senderUsername || m.user || m.author || '';
-    if (!me || !sender) return false;
-    return String(sender).toLowerCase() === String(me).toLowerCase();
-  };
+export default function ChatRoomPage(): React.ReactElement {
+  const { roomId } = useParams<{ roomId: string }>()
+  const nav = useNavigate()
+  const { userId } = useAuth() as { userId?: string | null }
+  const { setActiveRoom, clearFriend } = useNotifications()
 
-  const normalize = (m) => {
-    const obj = {
-      id: m.id ?? crypto.randomUUID(),
-      sender: m.sender || m.from || m.senderUsername || m.user || 'unknown',
-      content: m.message || m.text || m.content || m.body || '',
-      createdAt: m.createdAt || m.time || null,
-    };
-    return { ...obj, mine: isMine(obj) };
-  };
+  const [messages, setMessages] = useState<UiMsg[]>([])
+  const [text, setText] = useState('')
+  const [connected, setConnected] = useState<boolean>(ws.isConnected())
+  const endRef = useRef<HTMLDivElement | null>(null)
+  const peerRef = useRef<string | null>(null)
+  const inputRef = useRef<HTMLInputElement | null>(null)
 
-  // 방 진입/이동 시 서버에 읽음 처리 + 현재 방 설정
+  const me = userId ?? ''
+
+  const isMine = (m: { sender?: string }): boolean => {
+    const sender = (m.sender ?? '').toString()
+    if (!me || !sender) return false
+    return sender.toLowerCase() === me.toString().toLowerCase()
+  }
+
+  const normalize = (m: RawMsg): UiMsg => {
+    const id = m.id ?? crypto.randomUUID()
+    const sender = m.sender || m.from || m.senderUsername || m.user || 'unknown'
+    const content = m.message || m.text || m.content || m.body || ''
+    const createdAt = (m.createdAt as any) || (m.time as any) || null
+    const base = { id, sender: String(sender), content: String(content), createdAt }
+    return { ...base, mine: isMine(base) }
+  }
+
+  // 방 진입/이동 시: 읽음 처리 + 현재 방 지정 + 히스토리 로드
   useEffect(() => {
-    if (!roomId) return;
-    let cancelled = false;
+    if (!roomId) return
+    let cancelled = false
 
-    // 현재 방 지정 → 알림 훅에서 이 방의 들어오는 알림은 카운트하지 않음
-    setActiveRoom(roomId);
+    setActiveRoom(roomId)
 
-    (async () => {
+    ;(async () => {
       try {
-        await http.post(`/api/rooms/${encodeURIComponent(roomId)}/read`);
-      } catch (e) {
-        // 읽음 처리 실패해도 UI 진행은 가능
-        // console.warn('[READ] failed', e?.response?.data || e);
-      }
-      if (cancelled) return;
-      // 히스토리 로딩
-      try {
-        const res = await http.get(
-          `/api/rooms/${encodeURIComponent(roomId)}/messages?limit=50`
-        );
-        const list = Array.isArray(res.data) ? res.data.map(normalize) : [];
-        setMessages(list);
-      } catch (e) {
-        // console.error('[HTTP] history failed', e?.response?.data || e);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-      setActiveRoom(null); // 방 이탈 시 현재 방 해제
-    };
-  }, [roomId, setActiveRoom]);
-
-  // WebSocket 연결 + 구독
-  useEffect(() => {
-    if (!roomId) return;
-
-    // 이전 연결 종료
-    try { clientRef.current?.deactivate(); } catch {}
-    const jwt = localStorage.getItem('jwt');
-
-    const client = new Client({
-      webSocketFactory: () => new SockJS(`${API_BASE_URL}/ws`),
-      connectHeaders: jwt ? { Authorization: `Bearer ${jwt}` } : {},
-      // debug: (str) => console.log('[STOMP]', str),
-      reconnectDelay: 5000,
-      heartbeatIncoming: 10000,
-      heartbeatOutgoing: 10000,
-    });
-
-    client.onConnect = () => {
-      setConnected(true);
-      const dest = `/topic/rooms/${roomId}`;
-      client.subscribe(dest, (frame) => {
-        try {
-          const payload = JSON.parse(frame.body);
-          setMessages((prev) => {
-            const msg = normalize(payload);
-            // 중복 방지(같은 id가 이미 있으면 무시)
-            if (msg.id && prev.some((p) => p.id === msg.id)) return prev;
-            return [...prev, msg];
-          });
-        } catch {
-          setMessages((prev) => [...prev, normalize({ sender: 'system', content: frame.body })]);
-        }
-      });
-    };
-
-    client.onStompError = () => {
-      // console.error('[WS] broker error', frame);
-    };
-
-    client.activate();
-    clientRef.current = client;
-
-    return () => {
-      setConnected(false);
-      try { client.deactivate(); } catch {}
-      clientRef.current = null;
-    };
-  }, [roomId]);
-
-  useEffect(() => {
-    if (!roomId) return;
-    let cancelled = false;
-
-    setActiveRoom(roomId);
-    (async () => {
-      try {
-        const { data } = await http.post(`/api/rooms/${encodeURIComponent(roomId)}/read`);
-        const friend = data?.friendUsername || null;
+        // baseURL에 /api가 포함되어 있으므로 /rooms 로 호출
+        const { data } = await http.post(`/rooms/${encodeURIComponent(roomId)}/read`)
+        const friend = data?.friendUsername || null
         if (friend) {
-          peerRef.current = friend;
-          clearFriend(friend); // 로컬 배지 0
+          peerRef.current = friend
+          clearFriend(friend) // 로컬 배지 0
         }
       } catch (_) {}
-      if (cancelled) return;
-    })();
+
+      if (cancelled) return
+
+      try {
+        const res = await http.get(`/rooms/${encodeURIComponent(roomId)}/messages?limit=50`)
+        const list = Array.isArray(res.data) ? res.data.map(normalize) : []
+        setMessages(list)
+      } catch (_) {}
+    })()
 
     return () => {
-      cancelled = true;
-      setActiveRoom(null);
-      const friend = peerRef.current;
-      (async () => {
-        try {
-          await http.post(`/api/rooms/${encodeURIComponent(roomId)}/read`);
-        } catch (_) {}
-        if (friend) clearFriend(friend);
-      })();
-      setActiveRoom(null);
-    };
+      cancelled = true
+      setActiveRoom(null)
+      const friend = peerRef.current
+      ;(async () => {
+        try { await http.post(`/rooms/${encodeURIComponent(roomId)}/read`) } catch {}
+        if (friend) clearFriend(friend)
+      })()
+      setActiveRoom(null)
+    }
+  }, [roomId, setActiveRoom, clearFriend])
 
-  }, [roomId, setActiveRoom, clearFriend]);
+  // WebSocket 구독 (전역 싱글톤 사용)
+  useEffect(() => {
+    if (!roomId) return
+
+    // 연결 이벤트: true로 표시
+    const markConnected = () => setConnected(true)
+    ws.onConnect(markConnected)
+    // 현재 연결 상태 반영
+    setConnected(ws.isConnected())
+
+    // 방 토픽 구독
+    const unsub = ws.subscribe(`/topic/rooms/${roomId}`, (payload: any) => {
+      try {
+        setMessages((prev) => {
+          const msg = normalize(payload as RawMsg)
+          if (msg.id && prev.some((p) => p.id === msg.id)) return prev
+          return [...prev, msg]
+        })
+      } catch {
+        setMessages((prev) => [
+          ...prev,
+          normalize({ sender: 'system', content: String(payload) } as any),
+        ])
+      }
+    })
+
+    return () => {
+      unsub()
+      // 페이지 이탈 시 UI상 연결 표시는 내려둠(실제 소켓은 RealtimeProvider가 관리)
+      setConnected(false)
+    }
+  }, [roomId])
 
   // 자동 스크롤
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+    endRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages])
 
   const send = async () => {
-    const body = text.trim();
-    if (!body) return;
+    const body = text.trim()
+    if (!body || !roomId) return
     try {
-      // 서버가 브로드캐스트를 해주므로 낙관적 추가는 생략
-      await http.post(`/api/rooms/${encodeURIComponent(roomId)}/send`, { message: body });
-      setText('');
-      // 전송 후에도 키보드 유지
-      inputRef.current?.focus({ preventScroll: true });
-    } catch (e) {
-      // console.error('[HTTP] send failed', e?.response?.data || e);
-    }
-  };
+      // 서버 브로드캐스트에 의존(낙관적 추가 없음)
+      await http.post(`/rooms/${encodeURIComponent(roomId)}/send`, { message: body })
+      setText('')
+      inputRef.current?.focus({ preventScroll: true })
+    } catch (_) {}
+  }
 
-  const handleKeyDown = (e) => {
-    const composing = e.isComposing || e.nativeEvent?.isComposing;
+  const handleKeyDown: React.KeyboardEventHandler<HTMLInputElement> = (e) => {
+    const composing = (e as any).isComposing || (e.nativeEvent as any)?.isComposing
     if (!composing && e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      send();
+      e.preventDefault()
+      send()
     }
-  };
+  }
 
   return (
     <div className="chat">
@@ -217,12 +190,12 @@ export default function ChatRoomPage() {
         <button
           type="button"
           disabled={!connected || !text.trim()}
-          onMouseDown={(e) => e.preventDefault()} // 버튼이 포커스를 훔쳐서 blur 되는 것 방지
+          onMouseDown={(e) => e.preventDefault()}
           onClick={send}
         >
           Send
         </button>
       </div>
     </div>
-  );
+  )
 }

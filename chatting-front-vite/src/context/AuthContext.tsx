@@ -1,35 +1,62 @@
-import React, { createContext, useContext, useMemo, useState } from 'react'
+import React, { createContext, useContext, useEffect, useMemo, useState, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { getLoginIdFromToken } from '@/utils/jwt'
 
 type AuthCtx = {
   token: string | null
+  userId: string | null
   isAuthed: boolean
   login: (jwt: string) => void
-  logout: () => void
+  logout: (reason?: string) => void
 }
 
-const Ctx = createContext<AuthCtx | null>(null)
+const AuthContext = createContext<AuthCtx | null>(null)
 
-export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [token, setToken] = useState<string | null>(() => localStorage.getItem('jwt'))
-  const isAuthed = !!token
+const LS_TOKEN_KEY = 'jwt' // FriendsPage 등에서 이 키로 읽으므로 통일!
 
-  const login = (jwt: string) => {
+export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const nav = useNavigate()
+
+  const [token, setToken] = useState<string | null>(null)
+  const [userId, setUserId] = useState<string | null>(null)
+
+  // 초기 부팅: localStorage에서 불러오기
+  useEffect(() => {
+    const saved = localStorage.getItem(LS_TOKEN_KEY)
+    if (saved) {
+      setToken(saved)
+      setUserId(getLoginIdFromToken(saved))
+    }
+  }, [])
+
+  // 토큰 변경 시 userId 동기화
+  useEffect(() => {
+    setUserId(getLoginIdFromToken(token))
+  }, [token])
+
+  const login = useCallback((jwt: string) => {
+    try { localStorage.setItem(LS_TOKEN_KEY, jwt) } catch {}
     setToken(jwt)
-    localStorage.setItem('jwt', jwt)
-  }
+    setUserId(getLoginIdFromToken(jwt))
+  }, [])
 
-  const logout = () => {
+  const logout = useCallback((reason?: string) => {
+    try { localStorage.removeItem(LS_TOKEN_KEY) } catch {}
     setToken(null)
-    localStorage.removeItem('jwt')
-  }
+    setUserId(null)
+    // 필요하면 알림/세션 정리 이벤트도 여기서 발생
+    nav('/auth', { replace: true, state: reason ? { reason } : undefined })
+  }, [nav])
 
-  const value = useMemo(() => ({ token, isAuthed, login, logout }), [token, isAuthed])
+  const value = useMemo<AuthCtx>(() => ({
+    token, userId, isAuthed: !!token, login, logout
+  }), [token, userId, login, logout])
 
-  return <Ctx.Provider value={value}>{children}</Ctx.Provider>
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 
-export function useAuth(): AuthCtx {
-  const v = useContext(Ctx)
-  if (!v) throw new Error('useAuth must be used within <AuthProvider> (inside a <Router>)')
-  return v
+export const useAuth = (): AuthCtx => {
+  const ctx = useContext(AuthContext)
+  if (!ctx) throw new Error('useAuth must be used within <AuthProvider>')
+  return ctx
 }

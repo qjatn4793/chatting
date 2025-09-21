@@ -5,8 +5,7 @@ import '@/styles/friends.css'
 import RequestsPanel from './RequestsPanel'
 import { useAuth } from '@/context/AuthContext'
 import { useNotifications } from '@/hooks/useNotifications'
-import { Client } from '@stomp/stompjs'
-import SockJS from 'sockjs-client'
+import { ws } from '@/ws'
 
 const SOCK_PATH = import.meta.env.VITE_SOCKJS_PATH || '/ws'
 
@@ -83,24 +82,10 @@ export default function FriendsPage(): JSX.Element {
   // 실시간 친구 변경 이벤트 구독
   useEffect(() => {
     if (!userId) return
-    const token = localStorage.getItem('jwt') || undefined
-    const client = new Client({
-      webSocketFactory: () => new SockJS(SOCK_PATH),
-      connectHeaders: token ? { Authorization: `Bearer ${token}` } : {},
-      reconnectDelay: 3000,
-      debug: () => {},
+    const unsub = ws.subscribe(`/topic/friend-requests/${userId}`, () => {
+      load()
     })
-
-    client.onConnect = () => {
-      const dest = `/topic/friend-requests/${userId}`
-      client.subscribe(dest, () => {
-        // 페이로드 형태와 무관하게 안전하게 갱신
-        load()
-      })
-    }
-
-    client.activate()
-    return () => { if (client.active) client.deactivate() }
+    return () => unsub()
   }, [userId])
 
   const sortedFriends = useMemo(() => {
