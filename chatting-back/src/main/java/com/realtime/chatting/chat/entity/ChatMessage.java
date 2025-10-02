@@ -6,9 +6,14 @@ import lombok.*;
 
 @Entity
 @Table(name = "chat_messages", indexes = { @Index(name="idx_room_created", columnList="room_id, createdAt") })
-@Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
 public class ChatMessage {
-    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     @Column(name="room_id", nullable = false, length = 40)

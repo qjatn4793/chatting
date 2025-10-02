@@ -6,7 +6,11 @@ import lombok.*;
 
 @Entity
 @Table(name = "chat_rooms")
-@Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
 public class ChatRoom {
     public enum Type { DM, GROUP }
 
