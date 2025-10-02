@@ -1,0 +1,138 @@
+version: '3.8'
+
+services:
+  # ===========================
+  # MySQL 8
+  # ===========================
+  mysql:
+    image: mysql:8.4
+    container_name: toy-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: root_password
+      MYSQL_DATABASE: chat_db
+      MYSQL_USER: admin
+      MYSQL_PASSWORD: admin
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --explicit_defaults_for_timestamp=ON
+    ports:
+      - "33306:3306"
+    networks: [ mynetwork ]
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: [ "CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -p$${MYSQL_ROOT_PASSWORD} --silent" ]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    container_name: toy-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: user
+      RABBITMQ_DEFAULT_PASS: password
+    ports:
+      - "25672:15672"
+      - "6672:5672"
+    networks: [mynetwork]
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    container_name: toy-redis
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "1234"]
+    ports:
+      - "6379:6379"
+    networks: [mynetwork]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "1234", "PING"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+  # ===========================
+  # Backend (Spring Boot)
+  # ===========================
+  chatting-back:
+    build:
+      context: ./chatting-back
+      dockerfile: Dockerfile
+    container_name: chatting-back
+    ports:
+      - "8080:8080"
+    networks: [mynetwork]
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+
+      # MySQL로 변경
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/chat_db?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul
+      SPRING_DATASOURCE_USERNAME: admin
+      SPRING_DATASOURCE_PASSWORD: admin
+      # (선택) 드라이버 명시
+      SPRING_DATASOURCE_DRIVER_CLASS_NAME: com.mysql.cj.jdbc.Driver
+
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+
+      # Redis
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
+      SPRING_DATA_REDIS_PASSWORD: 1234
+
+      # RabbitMQ
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_PORT: 5672
+      SPRING_RABBITMQ_USERNAME: user
+      SPRING_RABBITMQ_PASSWORD: password
+
+  # ===========================
+  # Frontend (Vite -> Nginx)
+  # ===========================
+  chatting-front-vite:
+    build:
+      context: ./chatting-front-vite
+      dockerfile: Dockerfile
+      args:
+        VITE_APP_NAME: chatting-front
+        VITE_API_BASE: /api
+        VITE_SOCKJS_PATH: /ws
+        VITE_ENABLE_MOCKS: "false"
+        VITE_LOG_LEVEL: debug
+    container_name: chatting-front-vite
+    ports:
+      - "5173:80"
+    networks: [mynetwork]
+    depends_on:
+      chatting-back:
+        condition: service_started
+
+networks:
+  mynetwork:
+    driver: bridge
+
+volumes:
+  mysql-data:
+    driver: local
+  rabbitmq-data:
+    driver: local
+  redis-data:
+    driver: local
