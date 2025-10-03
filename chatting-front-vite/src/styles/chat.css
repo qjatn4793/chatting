@@ -3,73 +3,82 @@
    ================================ */
 
 :root {
-  --bg: #0b1220;
-  --panel: #11182a;
-  --panel-2: #0e1525;
-  --muted: #8b9bb0;
-  --text: #e6eefc;
-  --brand: #4f7cff;
-  --brand-2: #365dff;
-  --danger: #ff4d6d;
-  --bubble: #1a2236;
-  --bubble-me: #2a62ff1a;          /* brand tint */
-  --border: 1px solid #1d2740;
-  --shadow: 0 8px 24px rgba(3, 10, 26, 0.3);
+    --bg: #f5f7fb;
+    --panel: #ffffff;
+    --panel-2: #ffffff;
+    --muted: #6b7280;
+    --text: #0b1220;
+    --brand: #4f7cff;
+    --brand-2: #365dff;
+    --danger: #ff4d6d;
+    --bubble: #ffffff;
+    --bubble-me: #eaf0ff;          /* brand tint */
+    --border: 1px solid #e5e7eb;
+    --shadow: 0 10px 24px rgba(84, 99, 140, 0.12);
 
-  /* 키보드/뷰포트 대응용 동적 변수 */
-  --vvh: 100dvh;   /* 실제 보이는 viewport height (JS로 갱신) */
-  --kb: 0px;       /* (선택) 키보드 오버레이 추정 높이 */
-  --input-h: 56px; /* 입력바 실측 높이 (JS로 갱신) */
+    /* 키보드/뷰포트 대응용 동적 변수 */
+    --vvh: 100dvh;            /* 실제 보이는 viewport height (JS로 갱신) */
+    --kb: 0px;                /* (선택) 키보드 오버레이 추정 높이 */
+    --input-h: 56px;          /* 입력바 실측 높이 (JS로 갱신) */
+
+    /* ✅ 공통 헤더 높이(앱 셸 헤더). JS에서 실제 높이로 세팅: --app-header-h: 64px 등 */
+    --app-header-h: 56px;     /* 기본값(미세팅 시) */
 }
 
 * { box-sizing: border-box; }
 
 /* 레이아웃이 실제 보이는 높이에 맞춰 수축/확장되도록 height와 min-height 둘 다 지정 */
 .chat {
-  display: flex;
-  flex-direction: column;
-  height: var(--vvh);
-  min-height: var(--vvh);
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+    display: flex;
+    flex-direction: column;
+
+    /* ✅ 바깥 공통 헤더 높이만큼 차감해서 정확한 높이로 고정 */
+    height: calc(var(--vvh));
+    min-height: calc(var(--vvh));
+
+    /* 바깥(페이지) 스크롤 방지, 내부 리스트만 스크롤 */
+    overflow: hidden;
+
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
 }
 
 /* ===== Header ===== */
 .chat__header {
-  position: sticky;
-  top: 0;
-  z-index: 10;
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  align-items: center;
-  gap: 12px;
-  padding: 14px 18px;
-  background: rgba(17, 24, 42, 0.7);
-  backdrop-filter: blur(8px);
-  border-bottom: var(--border);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 18px;
+    background: rgba(255, 255, 255, 0.75);
+    backdrop-filter: blur(8px);
+    border-bottom: var(--border);
 }
 
 .chat__header h2 {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 600;
-  letter-spacing: .2px;
-  color: #ffffff;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: .2px;
+    color: #ffffff;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .chat__header button {
-  appearance: none;
-  border: 0;
-  padding: 8px 10px;
-  border-radius: 10px;
-  background: #101828;
-  border: var(--border);
-  color: #d5def0;
-  cursor: pointer;
-  transition: transform .06s ease, background .2s ease;
+    appearance: none;
+    border: 0;
+    padding: 8px 10px;
+    border-radius: 10px;
+    background: #160b0b;
+    border: var(--border);
+    color: #d5def0;
+    cursor: pointer;
+    transition: transform .06s ease, background .2s ease;
 }
 .chat__header button:hover { background: #0f172a; transform: translateY(-1px); }
 .chat__header button:active { transform: translateY(0); }
@@ -78,160 +87,141 @@
 
 /* ===== Message List ===== */
 .chat__list {
-  flex: 1;
-  overflow: auto;
-  /* 입력바 + 약간의 여유를 실제 높이에 맞춰 확보 */
-  padding: 16px 18px calc(var(--input-h) + 32px);
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  scroll-behavior: auto;
-  -webkit-overflow-scrolling: auto;
+    flex: 1 1 auto;
+    min-height: 0;                 /* ✅ flex 컨테이너에서 내부 스크롤 위해 필요 */
+    overflow: auto;
+
+    /* 입력바 + 약간의 여유를 실제 높이에 맞춰 확보 */
+    padding: 16px 18px calc(var(--input-h) + 32px + env(safe-area-inset-bottom, 0px));
+
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    scroll-behavior: auto;
+    -webkit-overflow-scrolling: auto;
+}
+
+/* (옵션) 키보드 열릴 때 리스트 바닥 여유 조금 더 확보 */
+.kb-open .chat__list {
+    padding-bottom: calc(var(--input-h) + 32px + var(--kb) + env(safe-area-inset-bottom, 0px));
 }
 
 /* ===== Message Item (left/right alignment) ===== */
 .chat__msg {
-  align-self: flex-start;          /* default: left bubble */
-  display: grid;
-  grid-template-columns: 1fr;
-  max-width: min(720px, 92%);
-  row-gap: 6px;
-  padding: 2px 0;
-  text-align: left;
+    align-self: flex-start;          /* default: left bubble */
+    display: grid;
+    grid-template-columns: 1fr;
+    max-width: min(720px, 92%);
+    row-gap: 6px;
+    padding: 2px 0;
+    text-align: left;
 }
 
 .chat__msg.me {
-  margin-left: auto;               /* push to right */
-  align-self: flex-end;            /* right alignment */
-  text-align: right;
+    margin-left: auto;               /* push to right */
+    align-self: flex-end;            /* right alignment */
+    text-align: right;
 }
 
 /* Sender label */
 .chat__sender {
-  font-size: 12px;
-  color: var(--muted);
-  padding: 0 4px;
+    font-size: 12px;
+    color: var(--muted);
+    padding: 0 4px;
 }
 .chat__msg.me .chat__sender { text-align: right; }
 
 /* Bubble */
 .chat__bubble {
-  width: fit-content;
-  max-width: 100%;
-  padding: 10px 12px;
-  border-radius: 14px 14px 14px 6px;     /* left-tail look */
-  border: var(--border);
-  box-shadow: var(--shadow);
-  line-height: 1.45;
-  word-break: break-word;
-  white-space: pre-wrap;
+    width: fit-content;
+    max-width: 100%;
+    padding: 10px 12px;
+    border-radius: 14px 14px 14px 6px;     /* left-tail look */
+    border: var(--border);
+    box-shadow: var(--shadow);
+    line-height: 1.45;
+    word-break: break-word;
+    white-space: pre-wrap;
 }
 
 .chat__msg.me .chat__bubble {
-  background: var(--bubble-me);
-  border-color: #2a62ff33;
-  border-radius: 14px 14px 6px 14px;     /* right-tail look */
+    background: var(--bubble-me);
+    border-color: #2a62ff33;
+    border-radius: 14px 14px 6px 14px;     /* right-tail look */
 }
 
 /* ===== Input Bar ===== */
 /* sticky로 충분하지만, 모바일에서 safe-area를 고려해 하단 여백 포함 */
 .chat__input {
-  position: sticky;
-  bottom: 0;
-  padding: 12px;
-  padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
-  background: linear-gradient(
-    180deg,
-    transparent 0%,
-    rgba(10, 15, 26, .7) 30%,
-    rgba(10, 15, 26, .9) 100%
-  );
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 10px;
-  border-top: var(--border);
-  backdrop-filter: blur(6px);
-  z-index: 20;
+    position: sticky;
+    bottom: 0;
+    padding: 12px;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+    background: linear-gradient(
+            180deg,
+            transparent 0%,
+            rgba(255,255,255,.8) 40%,
+            rgba(255,255,255,.95) 100%
+    );
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 10px;
+    border-top: var(--border);
+    backdrop-filter: blur(6px);
+    z-index: 20;
 }
 
 .chat__input input {
-  width: 100%;
-  height: 44px;
-  font-size: 16px;
-  line-height: 1.2;
-  -webkit-text-size-adjust: 100%;
-  padding: 0 14px;
-  border-radius: 12px;
-  background: var(--panel-2);
-  border: var(--border);
-  color: var(--text);
-  outline: none;
-  transition: none;
+    width: 100%;
+    height: 44px;
+    font-size: 16px;
+    line-height: 1.2;
+    -webkit-text-size-adjust: 100%;
+    padding: 0 14px;
+    border-radius: 12px;
+    background: var(--panel-2);
+    border: var(--border);
+    color: var(--text);
+    outline: none;
+    transition: none;
 }
 .chat__input input::placeholder { color: #789; }
 .chat__input input:focus { border-color: #2a62ff66; box-shadow: none; }
 
 .chat__input button {
-  height: 44px;
-  padding: 0 16px;
-  border-radius: 12px;
-  border: 0;
-  cursor: pointer;
-  background: linear-gradient(180deg, var(--brand) 0%, var(--brand-2) 100%);
-  color: white;
-  font-weight: 600;
-  box-shadow: 0 8px 18px rgba(79, 124, 255, .25);
-  transition: transform .06s ease, filter .2s ease, box-shadow .2s ease;
+    height: 44px;
+    padding: 0 16px;
+    border-radius: 12px;
+    border: 0;
+    cursor: pointer;
+    background: linear-gradient(180deg, var(--brand) 0%, var(--brand-2) 100%);
+    color: white;
+    font-weight: 600;
+    box-shadow: 0 8px 18px rgba(79, 124, 255, .25);
+    transition: transform .06s ease, filter .2s ease, box-shadow .2s ease;
 }
 .chat__input button:hover { filter: brightness(1.05); transform: translateY(-1px); }
 .chat__input button:active { transform: translateY(0); }
 .chat__input button:disabled {
-  opacity: .55;
-  cursor: default;
-  filter: grayscale(.2);
-  box-shadow: none;
+    opacity: .55;
+    cursor: default;
+    filter: grayscale(.2);
+    box-shadow: none;
 }
 
 /* ===== Scrollbar (WebKit) ===== */
 .chat__list::-webkit-scrollbar { width: 10px; }
 .chat__list::-webkit-scrollbar-thumb {
-  background: #22304d;
-  border-radius: 999px;
-  border: 2px solid transparent;
-  background-clip: padding-box;
+    background: #22304d;
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
 }
 .chat__list::-webkit-scrollbar-track { background: transparent; }
 
 /* ===== Small screens ===== */
 @media (max-width: 640px) {
-  .chat__list { padding: 12px 12px calc(var(--input-h) + 24px); }
-  .chat__bubble { font-size: 14px; }
-  .chat__header { padding: 12px; }
-}
-
-/* ===== Light mode ===== */
-@media (prefers-color-scheme: light) {
-  :root {
-    --bg: #f5f7fb;
-    --panel: #ffffff;
-    --panel-2: #ffffff;
-    --muted: #6b7280;
-    --text: #0b1220;
-    --bubble: #ffffff;
-    --bubble-me: #eaf0ff;
-    --border: 1px solid #e5e7eb;
-    --shadow: 0 10px 24px rgba(84, 99, 140, 0.12);
-  }
-
-  .chat { background: #f6f8ff; }
-  .chat__header { background: rgba(255, 255, 255, 0.75); }
-  .chat__input {
-    background: linear-gradient(
-      180deg,
-      transparent 0%,
-      rgba(255,255,255,.8) 40%,
-      rgba(255,255,255,.95) 100%
-    );
-  }
-  .chat__header button { background: #160b0b; }
+    .chat__list { padding: 12px 12px calc(var(--input-h) + 24px + env(safe-area-inset-bottom, 0px)); }
+    .chat__bubble { font-size: 14px; }
+    .chat__header { padding: 12px; }
 }

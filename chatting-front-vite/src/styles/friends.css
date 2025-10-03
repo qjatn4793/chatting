@@ -1,6 +1,6 @@
 /* ========== Friends Page Layout ========== */
 .friends {
-    max-width: 560px;
+    /*max-width: 730px;*/
     margin: 24px auto;
     padding: 0 20px;
 }
@@ -108,7 +108,6 @@
 /* ========== 친구 추가 영역 ========== */
 .friends__add {
     display: grid;
-    grid-template-columns: 1fr auto;
     gap: 10px;
     margin-bottom: 16px;
 }

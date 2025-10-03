@@ -4,8 +4,8 @@
   font-family: 'Arial', sans-serif; /* 폰트 변경 */
   background-color: #f7f7f7; /* 밝은 배경색 */
   margin: 0;
-  height: calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom));
-  overflow: hidden; /* 스크롤 방지 */
+  /*height: calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom));*/
+  /*overflow: hidden; !* 스크롤 방지 *!*/
 }
 
 /* 로고 스타일 */

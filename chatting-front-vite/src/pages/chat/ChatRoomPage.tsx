@@ -169,7 +169,7 @@ export default function ChatRoomPage(): React.ReactElement {
     useEffect(() => {
         // 필수 가드: 토큰/사용자 없음 > 로그아웃
         if (!userId) {
-            alert('no userId')
+            // alert('no userId')
             logout('no userId')
             nav('/login', { replace: true })
             return
@@ -380,12 +380,9 @@ export default function ChatRoomPage(): React.ReactElement {
     return (
         <div className="chat">
             <div className="chat__header">
-                <button onClick={() => nav('/friends')}>← Friends</button>
+                <button onClick={() => nav('/chat')}>← chat</button>
                 <h2>Room: {roomId}</h2>
-                <span className="me">나: {toStr(userId) || '알 수 없음'}</span>
-                <span className="muted">
-          {connected ? `connected${toStr(userId) ? ' as ' + toStr(userId) : ''}` : 'connecting...'}
-        </span>
+                <span className="me">사용자명 : {toStr(userId) || '알 수 없음'}</span>
             </div>
 
             <div className="chat__list" id="chat-list" ref={listRef}>

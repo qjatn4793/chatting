@@ -1,0 +1,174 @@
+:root {
+    --app-bg: #f6f7fb;
+    --bottomnav-h: 64px;  /* ✅ 하단 바 높이 */
+    --topbar-h: 56px;     /* 상단 바 높이 */
+}
+
+.app {
+    /* 단일 컬럼 레이아웃로 변경 (사이드바 제거) */
+    display: grid;
+    grid-template-columns: 1fr;
+    min-height: 100vh;
+    background: var(--app-bg, #f6f7fb);
+}
+
+/* (선택) /chat/:roomId 같은 디테일 화면에서 한 칼럼을 강제하고 싶을 때 사용 */
+.app.app--noside {
+    grid-template-columns: 1fr;
+}
+
+/* Main area */
+.app__main {
+    display: grid;
+    grid-template-rows: var(--topbar-h) 1fr;
+    min-width: 0;
+}
+
+.app__topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 12px;
+    background: #fff;
+    border-bottom: 1px solid #e2e8f0;
+    height: var(--topbar-h);
+}
+
+/* ChatRoomPage가 헤더 높이 측정 시 사용하는 클래스(삭제 금지) */
+.app-shell__header { }
+
+.app__topbar__left { display: flex; align-items: center; gap: 8px; }
+.app__topbar__right { display: flex; align-items: center; gap: 8px; }
+
+/* 본문: 하단 바에 가리지 않도록 패딩 확보 */
+/*.app__content {*/
+/*    padding: 16px;*/
+/*    min-width: 0;*/
+/*    padding-bottom: calc(var(--bottomnav-h) + 12px);*/
+/*}*/
+
+/* 기본 버튼/아이콘(공용) */
+.btn {
+    display:inline-flex; align-items:center; justify-content:center; gap:6px;
+    height:34px; padding:0 12px; border-radius:12px; border:1px solid #e2e8f0;
+    background:#f8fafc; color:#0f172a; font-size:14px; font-weight:600; cursor:pointer;
+}
+.btn--icon { width:36px; height:36px; padding:0; border-radius:12px; }
+.btn--icon.is-active { background:#eef2ff; border-color:#c7d2fe; }
+.btn--logout { background:#fee2e2; border-color:#fecaca; }
+
+/* 모바일 상단바에서만 보이는 로그아웃 버튼 (기본 비표시) */
+.app__logout { display: none; }
+
+/* ===== 하단 고정 네비게이션 (Bottom Nav) ===== */
+.bottomnav {
+    position: fixed;
+    left: 0; right: 0; bottom: 0;
+    height: var(--bottomnav-h);
+    background: rgba(255,255,255,0.96);
+    border-top: 1px solid #e2e8f0;
+    backdrop-filter: blur(8px);
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);  /* 친구 / 채팅 / 알림 */
+    align-items: center;
+    z-index: 1000;
+}
+
+.bottomnav__item,
+.bottomnav__button {
+    appearance: none;
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    height: 100%;
+    padding: 6px 4px;
+    color: #0f172a;
+    text-decoration: none;
+    display: grid;
+    align-content: center;
+    justify-items: center;
+    gap: 4px;
+    cursor: pointer;
+    font: inherit;
+}
+
+.bottomnav__item.is-active {
+    background: #eef2ff;
+}
+
+.bottomnav__icon {
+    display: inline-grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+}
+
+.bottomnav__label {
+    font-size: 12px;
+    line-height: 1;
+}
+
+/* 알림 벨이 내부에 버튼 스타일을 이미 가지고 있어도 레이아웃 안정화 */
+.bottomnav .btn,
+.bottomnav .btn--icon {
+    all: unset;
+    display: inline-grid;
+    place-items: center;
+}
+
+/* Modal / Bell (공용) */
+.modal__overlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.45);
+    display: flex; align-items: flex-start; justify-content: center;
+    padding-top: 80px; z-index: 2000;
+}
+.modal__panel {
+    width: min(720px, 92vw);
+    background: #fff; color: #0f172a;
+    border: 1px solid #e2e8f0; border-radius: 14px;
+    box-shadow: 0 8px 24px rgba(3,10,26,.15);
+    overflow: hidden;
+}
+.modal__header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 16px; border-bottom: 1px solid #e2e8f0; background: #f8fafc;
+}
+.modal__body { padding: 12px; }
+
+/* 알림 뱃지 */
+.badge--notif {
+    position:absolute; top:-4px; right:-4px; min-width:18px; height:18px; padding:0 5px;
+    border-radius:9px; font-size:11px; display:inline-flex; align-items:center; justify-content:center;
+    background:#ef4444; color:#fff; font-weight:700; box-shadow:0 0 0 2px #fff;
+}
+
+/* ===== 반응형 ===== */
+@media (max-width: 840px) {
+    /* 모바일에서 상단바 로그아웃 버튼 노출 */
+    .app__logout { display: inline-flex; }
+}
+
+/* bottomnav의 각 아이템을 배지 기준점으로 */
+.bottomnav__item {
+    position: relative;
+}
+
+/* 채팅 탭 배지 스타일 */
+.badge--nav {
+    position: absolute;
+    top: 6px;
+    right: 18px;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    border-radius: 9px;
+    font-size: 11px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: #ef4444; /* red-500 */
+    color: #fff;
+    font-weight: 700;
+    box-shadow: 0 0 0 2px #fff;
+}
