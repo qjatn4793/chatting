@@ -3,8 +3,6 @@ import http, { API_BASE_URL } from '@/api/http'
 import { useAuth } from '@/context/AuthContext'
 import { ws } from '@/ws'
 
-const SOCK_PATH = import.meta.env.VITE_SOCKJS_PATH || '/ws'
-
 type Req = {
   id: string | number
   status?: string

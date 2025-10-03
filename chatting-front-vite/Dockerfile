@@ -12,7 +12,7 @@ COPY . .
 # (옵션) 빌드타임 API Base (compose의 build.args와 연결)
 ARG VITE_APP_NAME=chatting-front
 ARG VITE_API_BASE=/api
-ARG VITE_SOCKJS_PATH=/ws
+ARG VITE_SOCKJS_PATH=/ws/
 ARG VITE_ENABLE_MOCKS=false
 ARG VITE_LOG_LEVEL=debug
 

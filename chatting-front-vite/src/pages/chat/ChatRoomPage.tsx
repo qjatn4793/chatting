@@ -167,24 +167,59 @@ export default function ChatRoomPage(): React.ReactElement {
 
     /** ---- 세션 가드: 진입 시 userId/WS 연결 확인 ---- */
     useEffect(() => {
-        const graceMs = 1500
-
+        // 필수 가드: 토큰/사용자 없음 > 로그아웃
         if (!userId) {
+            alert('no userId')
             logout('no userId')
             nav('/login', { replace: true })
             return
         }
 
+        let graceTimer: number | null = null
+        let tried = 0
+        const MAX_GRACE_MS = 10000           // 10s (처음 콜드 스타트/프록시 지연 커버)
+        const RETRY_BASE_MS = 800            // 재시도 백오프 시작
+        const RETRY_MAX_MS  = 5000
+
+        const startGrace = () => {
+            if (graceTimer) window.clearTimeout(graceTimer)
+            graceTimer = window.setTimeout(() => {
+                // 여기서 곧장 로그아웃하지 말고, UI 표시 + 재시도
+                console.warn('WS still disconnected: showing offline but keep retrying')
+                //alert('ws disconnected (retrying)')
+                ws.ensureConnected()             // 내부 재시도 트리거
+            }, MAX_GRACE_MS)
+        }
+
+        const clearGrace = () => {
+            if (graceTimer) { window.clearTimeout(graceTimer); graceTimer = null }
+        }
+
+        const onUp = () => {
+            clearGrace()
+            tried = 0
+        }
+
+        const onDown = () => {
+            // 끊김 감지: 점진 백오프로 재연결 시도
+            tried += 1
+            const delay = Math.min(RETRY_BASE_MS * Math.pow(2, tried - 1), RETRY_MAX_MS)
+            window.setTimeout(() => ws.ensureConnected(), delay)
+        }
+
+        // 이벤트 먼저 구독 → 연결 시도 (레이스 방지)
+        ws.onConnect(onUp)
+        ws.onDisconnect(onDown)
+
+        // 최초 연결 시도 + 그레이스 타이머 가동
         ws.ensureConnected()
+        startGrace()
 
-        const t = window.setTimeout(() => {
-            if (!ws.isConnected()) {
-                logout('ws disconnected')
-                nav('/login', { replace: true })
-            }
-        }, graceMs)
-
-        return () => window.clearTimeout(t)
+        return () => {
+            clearGrace()
+            ws.offConnect(onUp)
+            ws.offDisconnect(onDown)
+        }
     }, [userId, logout, nav])
 
     /** mount: 초기 세팅 */

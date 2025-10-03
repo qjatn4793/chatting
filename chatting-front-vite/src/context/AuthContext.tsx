@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useMemo, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getLoginIdFromToken } from '@/utils/jwt'
+import { ws } from '@/ws'
 
 type AuthCtx = {
   token: string | null
@@ -44,6 +45,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try { localStorage.removeItem(LS_TOKEN_KEY) } catch {}
     setToken(null)
     setUserId(null)
+    ws.disconnect()
     // 필요하면 알림/세션 정리 이벤트도 여기서 발생
     nav('/auth', { replace: true, state: reason ? { reason } : undefined })
   }, [nav])

@@ -4,7 +4,7 @@ import SockJS from 'sockjs-client'
 
 const NATIVE_WS = import.meta.env.VITE_WS_URL as string | undefined
 const SOCK_PATH =
-  (import.meta.env.VITE_SOCKJS_PATH as string | undefined) || '/ws'
+  (import.meta.env.VITE_SOCKJS_PATH as string | undefined) || '/ws/'
 
 type SubCb = (payload: any) => void
 
@@ -31,11 +31,11 @@ class WS {
 
   setAuthToken(jwt: string | null) {
     this.token = jwt
-    // 필요 시, 이미 연결된 상태에서 토큰이 바뀌었다면 재연결을 강제하고 싶으면 아래 주석 해제:
-    // if (this.client?.connected) {
-    //   this.disconnect()
-    //   this.connect()
-    // }
+    // 이미 연결된 상태에서 토큰이 바뀌었다면 재연결을 강제하도록
+    if (this.client?.connected) {
+      this.disconnect()
+      this.connect()
+    }
   }
 
   isActive() { return !!this.client?.active }
