@@ -57,9 +57,6 @@
 .btn--icon.is-active { background:#eef2ff; border-color:#c7d2fe; }
 .btn--logout { background:#fee2e2; border-color:#fecaca; }
 
-/* 모바일 상단바에서만 보이는 로그아웃 버튼 (기본 비표시) */
-.app__logout { display: none; }
-
 /* ===== 하단 고정 네비게이션 (Bottom Nav) ===== */
 .bottomnav {
     position: fixed;

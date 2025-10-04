@@ -1,5 +1,5 @@
 // src/bootstrap/BottomNav.tsx
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
 import { useNotifications } from '@/hooks/useNotifications'
@@ -9,109 +9,180 @@ import { ws } from '@/ws'
 
 type Room = { id: string }
 
+const isFiniteNumber = (x: unknown): x is number =>
+    typeof x === 'number' && Number.isFinite(x)
+
+/** 안전 합산 */
+const sum = (arr: Array<number | null | undefined>): number =>
+    arr.reduce<number>((acc, v) => acc + (isFiniteNumber(v) ? v : 0), 0)
+
 export default function BottomNav(): JSX.Element {
     const { userId } = useAuth() as any
-    const {
-        getUnread,          // ✅ 친구 기준 미읽음 (FriendsPage에서 쓰던 것)
-        getUnreadByRoom,    // ✅ 방 기준 미읽음 (있으면 우선 사용)
-    } = useNotifications() as any
+    const { getUnread, getUnreadByRoom } = useNotifications() as any
 
-    const [unreadTotal, setUnreadTotal] = useState<number>(0)
+    const [unreadTotal, setUnreadTotal] = useState(0)
+
+    // 현재 보유한 방 목록 & 방별 구독 레지스트리
     const roomsRef = useRef<string[]>([])
-    const timerRef = useRef<number | null>(null)
-    const fetchingRoomsRef = useRef(false)
+    const roomSubsRef = useRef<Map<string, () => void>>(new Map())
 
-    // 방 목록 확보 (최초 1회 + 방 변경 시)
-    const ensureRooms = async () => {
-        if (fetchingRoomsRef.current) return
+    /** 방 목록 동기화 */
+    const syncRooms = useCallback(async () => {
         try {
-            fetchingRoomsRef.current = true
             const res = await http.get<Room[]>('/rooms')
-            roomsRef.current = (Array.isArray(res.data) ? res.data : []).map(r => r.id)
+            const ids = (Array.isArray(res.data) ? res.data : [])
+                .map(r => String(r?.id))
+                .filter(Boolean)
+            const unique = Array.from(new Set(ids))
+            roomsRef.current = unique
+            return unique
         } catch {
             roomsRef.current = []
-        } finally {
-            fetchingRoomsRef.current = false
+            return []
         }
-    }
+    }, [])
 
-    // 합산: 1) 방 기준 → 2) (보조) 친구 기준
-    const recalc = async () => {
-        try {
-            if (roomsRef.current.length === 0) {
-                await ensureRooms()
-            }
+    /** 전체 미읽음 즉시 재계산 (항상 최신 훅을 캡쳐하도록 useCallback) */
+    const recalcNow = useCallback(async () => {
+        // 1) 방 기준 우선
+        let total = 0
+        if (typeof getUnreadByRoom === 'function' && roomsRef.current.length > 0) {
+            total = sum(roomsRef.current.map(id => getUnreadByRoom(id)))
+        }
 
-            let total = 0
+        // 2) 보조 경로: 친구 기준
+        if ((!total || total === 0) && typeof getUnread === 'function') {
+            try {
+                const fr = await http.get<any[]>('/friends')
+                const friends = Array.isArray(fr.data) ? fr.data : []
+                total = sum(
+                    friends.map(f =>
+                        getUnread(
+                            f?.id ?? f?.username ?? f?.name ?? f // 문자열 배열일 수도 있음
+                        )
+                    )
+                )
+            } catch { /* ignore */ }
+        }
 
-            // 1) 방 기준 합산이 가능하면 우선 사용
-            if (typeof getUnreadByRoom === 'function' && roomsRef.current.length > 0) {
-                total = roomsRef.current.reduce((acc, id) => acc + (getUnreadByRoom(id) || 0), 0)
-            }
+        setUnreadTotal(total || 0)
+    }, [getUnread, getUnreadByRoom])
 
-            // 2) 보조 경로: 방 기준 합계가 0이거나 함수가 없으면 친구 기준으로 시도
-            if ((!total || total === 0) && typeof getUnread === 'function') {
+    /** 방별 메시지 토픽 재구독(있을 때만 효과) */
+    const resubscribeRoomTopics = useCallback(() => {
+        // 1) 기존 구독 clean
+        for (const un of roomSubsRef.current.values()) {
+            try { un() } catch {}
+        }
+        roomSubsRef.current.clear()
+
+        // 2) 재구독
+        roomsRef.current.forEach(roomId => {
+            const trySub = (dest: string) => {
                 try {
-                    const fr = await http.get<string[]>('/friends')
-                    const friends: string[] = Array.isArray(fr.data) ? fr.data : []
-                    total = friends.reduce((acc, name) => acc + (getUnread(name) || 0), 0)
-                } catch {
-                    // ignore
-                }
+                    const un = ws.subscribe(dest, () => {
+                        // 콜백 → 항상 최신 recalcNow 호출 (useCallback 덕분에 스테일 클로저 방지)
+                        recalcNow()
+                    })
+                    roomSubsRef.current.set(dest, un)
+                    return true
+                } catch { return false }
             }
+            // 서버 규칙에 맞게 하나 쓰세요. 기본 A → 실패 시 B로 시도.
+            if (!trySub(`/topic/messages/room/${roomId}`)) {
+                trySub(`/topic/rooms/${roomId}/messages`)
+            }
+        })
+    }, [recalcNow])
 
-            setUnreadTotal(total || 0)
-        } catch {
-            setUnreadTotal(0)
+    // 크로스탭 신호 유틸: 다른 탭에서 이벤트 발생 시 현재 탭도 깨어나서 재계산
+    const bumpCrossTab = useCallback(() => {
+        try {
+            localStorage.setItem('unread-bump', String(Date.now()))
+        } catch {}
+    }, [])
+    useEffect(() => {
+        const onStorage = (e: StorageEvent) => {
+            if (e.key === 'unread-bump') recalcNow()
         }
-    }
+        window.addEventListener('storage', onStorage)
+        return () => window.removeEventListener('storage', onStorage)
+    }, [recalcNow])
 
-    const scheduleRecalc = (ms = 120) => {
-        if (timerRef.current) window.clearTimeout(timerRef.current)
-        timerRef.current = window.setTimeout(() => { recalc() }, ms) as unknown as number
-    }
-
+    // 메인 이펙트
     useEffect(() => {
         if (!userId) return
+        let coreUnsubs: Array<() => void> = []
+        let pollId: number | null = null
 
-        // 초기 1회
-        recalc()
+        ;(async () => {
+            await syncRooms()
+            resubscribeRoomTopics()
+            await recalcNow()
+        })()
 
-        // WS 이벤트: 메시지/방 변경 시 재계산
-        const unsubs: Array<() => void> = []
-        unsubs.push(ws.subscribe(`/topic/messages/${userId}`, () => scheduleRecalc()))
-        unsubs.push(ws.subscribe(`/user/queue/messages`, () => scheduleRecalc()))
-        unsubs.push(ws.subscribe(`/topic/rooms/${userId}`, async () => {
-            roomsRef.current = []
-            scheduleRecalc(30)
-        }))
-        unsubs.push(ws.subscribe(`/user/queue/rooms`, async () => {
-            roomsRef.current = []
-            scheduleRecalc(30)
-        }))
-        // 친구 요청/수락 등도 뱃지에 영향(미리보기/읽음 로직과 연동 시) 있을 수 있으니 보조로 포함
-        unsubs.push(ws.subscribe(`/topic/friend-requests/${userId}`, () => scheduleRecalc(60)))
-        unsubs.push(ws.subscribe(`/user/queue/friends`, () => scheduleRecalc(60)))
+        // 사용자/개인 큐 이벤트 → 즉시 합산
+        coreUnsubs.push(ws.subscribe(`/topic/messages/${userId}`, () => { recalcNow(); bumpCrossTab() }))
+        coreUnsubs.push(ws.subscribe(`/user/queue/messages`, () => { recalcNow(); bumpCrossTab() }))
 
-        // 연결(재연결) 또는 탭 활성화 시 동기화
-        const onConnect = () => scheduleRecalc(30)
-        const onVisible = () => { if (document.visibilityState === 'visible') scheduleRecalc(30) }
+        // 읽음/상태 변경 신호가 따로 있으면 포함
+        try { coreUnsubs.push(ws.subscribe(`/user/queue/read-receipts`, () => { recalcNow(); bumpCrossTab() })) } catch {}
+        try { coreUnsubs.push(ws.subscribe(`/user/queue/friends`, () => { recalcNow(); bumpCrossTab() })) } catch {}
 
+        // 방 변경 → 동기화 → 방별 재구독 → 즉시 합산
+        const onRoomsChanged = async () => {
+            await syncRooms()
+            resubscribeRoomTopics()
+            await recalcNow()
+            bumpCrossTab()
+        }
+        coreUnsubs.push(ws.subscribe(`/topic/rooms/${userId}`, onRoomsChanged))
+        coreUnsubs.push(ws.subscribe(`/user/queue/rooms`, onRoomsChanged))
+
+        // 재연결 시에도 동일 절차
+        const onConnect = async () => {
+            await syncRooms()
+            resubscribeRoomTopics()
+            await recalcNow()
+        }
         ws.onConnect(onConnect)
         ws.ensureConnected()
+
+        // 가시성/포커스/온라인 전환 시 복구
+        const onVisible = () => { if (document.visibilityState === 'visible') recalcNow() }
+        const onFocus = () => recalcNow()
+        const onOnline = () => recalcNow()
         document.addEventListener('visibilitychange', onVisible)
+        window.addEventListener('focus', onFocus)
+        window.addEventListener('online', onOnline)
+
+        // 가벼운 폴링(visible일 때만 3초): 이벤트 누락/백그라운드 누수 대비
+        const startPoll = () => {
+            if (pollId) return
+            pollId = window.setInterval(() => {
+                if (document.visibilityState === 'visible') recalcNow()
+            }, 3000) as unknown as number
+        }
+        const stopPoll = () => {
+            if (pollId) { clearInterval(pollId); pollId = null }
+        }
+        startPoll()
 
         return () => {
-            unsubs.forEach(u => { try { u() } catch {} })
+            coreUnsubs.forEach(u => { try { u() } catch {} })
+            coreUnsubs = []
+
+            for (const un of roomSubsRef.current.values()) { try { un() } catch {} }
+            roomSubsRef.current.clear()
+
             try { ws.offConnect(onConnect) } catch {}
             document.removeEventListener('visibilitychange', onVisible)
-            if (timerRef.current) {
-                try { window.clearTimeout(timerRef.current) } catch {}
-                timerRef.current = null
-            }
+            window.removeEventListener('focus', onFocus)
+            window.removeEventListener('online', onOnline)
+            stopPoll()
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [userId])
+    }, [userId, recalcNow, resubscribeRoomTopics, syncRooms, bumpCrossTab])
 
     return (
         <nav className="bottomnav">
@@ -132,13 +203,11 @@ export default function BottomNav(): JSX.Element {
                 <span className="bottomnav__icon">💬</span>
                 <span className="bottomnav__label">채팅</span>
 
-                {/* ✅ 전체 미읽음 합계 배지 */}
                 {unreadTotal > 0 && (
                     <span className="badge badge--nav">{unreadTotal > 99 ? '99+' : unreadTotal}</span>
                 )}
             </NavLink>
 
-            {/* 알림(친구 요청 팝업) */}
             <button className="bottomnav__item bottomnav__button" title="알림">
         <span className="bottomnav__icon">
           <NotificationsBell userId={userId} />
