@@ -109,10 +109,7 @@ type UiMsg = {
     content?: string
     createdAt?: number | string
     sender?: string
-    senderUsername?: string
-    senderEmail?: string
-    from?: string
-    user?: string
+    username?: string
 }
 function normalizeMsg(m: RawMsg): UiMsg | null {
     const id = toStr(m?.id) || toStr(m?.messageId) || toStr(m?.uuid) || toStr(m?.pk)
@@ -124,16 +121,13 @@ function normalizeMsg(m: RawMsg): UiMsg | null {
         content,
         createdAt,
         sender: toStr(m?.sender),
-        senderUsername: toStr(m?.senderUsername || m?.username),
-        senderEmail: toStr(m?.senderEmail || m?.email),
-        from: toStr(m?.from),
-        user: toStr(m?.user),
+        username: toStr(m?.username)
     }
 }
 
 function displaySenderOf(m: UiMsg): { name?: string; email?: string } {
-    const name = toStr(m.senderUsername || m.sender || m.user || m.from)
-    const email = toStr(m.senderEmail)
+    const name = toStr(m.username)
+    const email = toStr(m.sender)
     // name이 이메일이면 이메일로만 처리
     if (!email && isEmail(name)) return { email: name, name: undefined }
     return { name: name || undefined, email: email || undefined }
@@ -207,6 +201,9 @@ export default function ChatListPage(): JSX.Element {
                             const createdAt = (last?.createdAt as any) ?? room.lastMessageAt ?? undefined
 
                             const peer = pickDmPeerFromMsgs(msgs, meKey)
+
+                            console.log(msgs);
+                            console.log(peer);
 
                             return {
                                 ...room,

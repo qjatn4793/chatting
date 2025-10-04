@@ -6,6 +6,7 @@ import { useAuth } from '@/context/AuthContext'
 import { useNotifications } from '@/hooks/useNotifications'
 import { ws } from '@/ws'
 
+/* ========== 유틸 ========== */
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const isEmail = (s?: string) => !!(s && EMAIL_RE.test(s || ''))
 
@@ -15,7 +16,7 @@ function toStr(x: unknown): string | undefined {
     return s || undefined
 }
 
-/** 이름(이메일) 규칙 포맷 */
+/** “이름(이메일)” 규칙 포맷 */
 function formatNameEmail(name?: string, email?: string): string {
     const n = toStr(name)
     const e = toStr(email)
@@ -25,12 +26,22 @@ function formatNameEmail(name?: string, email?: string): string {
     return '알 수 없음'
 }
 
-type FriendCard = {
-    id: string             // 내부 키 (식별자)
+/* ========== 타입 ========== */
+type FriendBriefDto =
+    | string
+    | {
+    id?: string
     name?: string
     email?: string
 }
 
+type FriendCard = {
+    id: string            // 내부 식별자(없으면 email로 대체)
+    name?: string
+    email?: string
+}
+
+/* ========== 컴포넌트 ========== */
 export default function FriendsPage(): JSX.Element {
     const [friends, setFriends] = useState<FriendCard[]>([])
     const [identifierToAdd, setIdentifierToAdd] = useState('')
@@ -44,19 +55,42 @@ export default function FriendsPage(): JSX.Element {
     const { clearFriend, setActiveRoom } = useNotifications() as any
     const pollTimerRef = useRef<number | null>(null)
 
-    /** 식별자 문자열을 FriendCard로 변환(간이) */
-    const enrichFriend = (idv: string): FriendCard => {
-        const id = idv.trim()
-        if (isEmail(id)) return { id, email: id }
-        return { id, name: id } // 이메일이 아니면 이름으로 노출
+    /** 서버 응답(FriendBriefDto)을 FriendCard로 정규화 */
+    const normalizeFriend = (raw: FriendBriefDto): FriendCard | null => {
+        if (typeof raw === 'string') {
+            const v = raw.trim()
+            if (!v) return null
+            if (isEmail(v)) return { id: v, email: v }
+            return { id: v, name: v }
+        }
+        const id = toStr(raw?.id) || toStr(raw?.email) // id가 없으면 email을 id로 대체
+        const name = toStr(raw?.name)
+        const email = toStr(raw?.email)
+        if (!id && !email && !name) return null
+        return { id: id || email || (name as string), name, email }
     }
 
+    /** friends 배열에 중복 없이 하나 추가 */
+    const ensureUniquePush = (f: FriendCard) => {
+        setFriends(prev => {
+            if (prev.some(x => x.id === f.id)) return prev
+            return [f, ...prev]
+        })
+    }
+
+    /** /friends 로드 */
     const load = async () => {
         try {
-            // GET /friends → string[] (식별자)
-            const res = await http.get<string[]>('/friends')
+            // ✅ 이제 백엔드는 [{id,name,email}] 형태를 반환 (레거시 string[]도 허용)
+            const res = await http.get<FriendBriefDto[]>('/friends')
             const arr = Array.isArray(res.data) ? res.data : []
-            setFriends(arr.map(enrichFriend))
+
+            console.log(arr);
+
+            const normalized = arr
+                .map(normalizeFriend)
+                .filter(Boolean) as FriendCard[]
+            setFriends(normalized)
         } catch (e: any) {
             const status = e?.response?.status
             if ([401, 403, 419, 440].includes(status)) {
@@ -67,23 +101,15 @@ export default function FriendsPage(): JSX.Element {
         }
     }
 
-    const ensureUniquePush = (id: string) => {
-        const v = (id ?? '').trim()
-        if (!v) return
-        setFriends((prev) => {
-            if (prev.some((f) => f.id === v)) return prev
-            return [enrichFriend(v), ...prev]
-        })
-    }
-
     const startShortConvergencePoll = () => {
         const delays = [0, 400, 1200]
-        delays.forEach((ms) => {
+        delays.forEach(ms => {
             const t = window.setTimeout(() => load(), ms)
             pollTimerRef.current = t as unknown as number
         })
     }
 
+    /** 친구 요청 보내기 */
     const addFriend = async () => {
         const identifier = identifierToAdd.trim()
         if (!identifier) {
@@ -101,6 +127,7 @@ export default function FriendsPage(): JSX.Element {
             const msg = e?.response?.data?.message
 
             if (status === 409) {
+                // 이미 친구이거나 요청이 존재
                 try {
                     const { data: incoming } = await http.get('/friends/requests/incoming')
                     const hasFromTarget =
@@ -115,15 +142,17 @@ export default function FriendsPage(): JSX.Element {
                         setError('상대가 이미 보낸 요청이 있어요. “받은 요청”에서 수락하세요.')
                     } else {
                         const { data: fr } = await http.get('/friends')
-                        const isAlreadyFriend =
-                            Array.isArray(fr) &&
-                            fr.some((f: any) => String(f).toLowerCase() === identifier.toLowerCase())
-
-                        setError(
-                            isAlreadyFriend
-                                ? '이미 친구예요.'
-                                : msg || '이미 보냈거나 상대가 보낸 요청이 있어요.'
-                        )
+                        const list = Array.isArray(fr) ? fr : []
+                        const exists = list.some((it: any) => {
+                            if (typeof it === 'string') return it.toLowerCase() === identifier.toLowerCase()
+                            const id = toStr(it?.id)
+                            const email = toStr(it?.email)
+                            return (
+                                id?.toLowerCase() === identifier.toLowerCase() ||
+                                email?.toLowerCase() === identifier.toLowerCase()
+                            )
+                        })
+                        setError(exists ? '이미 친구예요.' : (msg || '이미 보냈거나 상대가 보낸 요청이 있어요.'))
                     }
                 } catch {
                     setError(msg || '이미 보냈거나 상대가 보낸 요청이 있어요.')
@@ -143,12 +172,14 @@ export default function FriendsPage(): JSX.Element {
         }
     }
 
-    const openDm = async (friendIdentifier: string) => {
-        const idf = friendIdentifier.trim()
+    /** DM 열기: email 우선, 없으면 id 사용 */
+    const openDm = async (friendIdOrEmail: string) => {
+        const idf = friendIdOrEmail.trim()
         if (!idf) return
         setOpening(idf)
         try {
-            const res = await http.post<{ id: string }>('/rooms/dm/by-identifier', { identifier: idf })
+            const identifier = idf // 서버가 식별자 flexible 매칭(이메일/UUID/유저명 등)을 지원한다고 가정
+            const res = await http.post<{ id: string }>('/rooms/dm/by-identifier', { identifier })
             const room = res.data
             if (!room?.id) throw new Error('room id missing')
 
@@ -163,10 +194,12 @@ export default function FriendsPage(): JSX.Element {
         }
     }
 
+    /* 초기 로드 */
     useEffect(() => {
         load()
     }, [])
 
+    /* 친구 관련 토픽 실시간 갱신 */
     useEffect(() => {
         if (!userUuid) return
         const unsubs: Array<() => void> = []
@@ -178,27 +211,22 @@ export default function FriendsPage(): JSX.Element {
         ws.onConnect(onWsConnect)
         ws.ensureConnected()
         return () => {
-            unsubs.forEach((u) => {
-                try {
-                    u()
-                } catch {}
-            })
-            try {
-                ws.offConnect(onWsConnect)
-            } catch {}
+            unsubs.forEach(u => { try { u() } catch {} })
+            try { ws.offConnect(onWsConnect) } catch {}
             if (pollTimerRef.current) {
-                try {
-                    clearTimeout(pollTimerRef.current as unknown as number)
-                } catch {}
+                try { clearTimeout(pollTimerRef.current as unknown as number) } catch {}
             }
         }
     }, [userUuid])
 
+    /* 다른 패널에서의 상태 변화 브로드캐스트 수신 */
     useEffect(() => {
         const handler = (e: Event) => {
-            const ce = e as CustomEvent<{ type?: string; friend?: string }>
+            const ce = e as CustomEvent<{ type?: string; friend?: FriendBriefDto }>
+
             if (ce?.detail?.type === 'accepted' && ce.detail.friend) {
-                ensureUniquePush(ce.detail.friend)
+                const card = normalizeFriend(ce.detail.friend)
+                if (card) ensureUniquePush(card)
             }
             startShortConvergencePoll()
         }
@@ -206,6 +234,7 @@ export default function FriendsPage(): JSX.Element {
         return () => window.removeEventListener('friends:maybe-changed', handler as EventListener)
     }, [])
 
+    /* 이름(이메일) 기준 정렬 */
     const sortedFriends = useMemo(() => {
         return [...friends].sort((a, b) => {
             const A = formatNameEmail(a.name, a.email).toLowerCase()
@@ -233,18 +262,22 @@ export default function FriendsPage(): JSX.Element {
             </div>
 
             <ul className="friends__list">
-                {sortedFriends.map((f) => (
-                    <li key={f.id} className="friends__item">
-                        <div className="friends__left">
-                            <div className="friends__nameRow">
-                                <span className="friends__name">{formatNameEmail(f.name, f.email)}</span>
+                {sortedFriends.map((f) => {
+                    // DM 열 때는 email을 최우선 식별자로 사용, 없으면 id로
+                    const openKey = f.email || f.id
+                    return (
+                        <li key={f.id} className="friends__item">
+                            <div className="friends__left">
+                                <div className="friends__nameRow">
+                                    <span className="friends__name">{formatNameEmail(f.name, f.email)}</span>
+                                </div>
                             </div>
-                        </div>
-                        <button className="btn" onClick={() => openDm(f.id)} disabled={opening === f.id}>
-                            {opening === f.id ? '열기...' : '대화'}
-                        </button>
-                    </li>
-                ))}
+                            <button className="btn" onClick={() => openDm(openKey)} disabled={opening === openKey}>
+                                {opening === openKey ? '열기...' : '대화'}
+                            </button>
+                        </li>
+                    )
+                })}
                 {!friends.length && <li className="friends__empty">친구가 없습니다.</li>}
             </ul>
         </div>

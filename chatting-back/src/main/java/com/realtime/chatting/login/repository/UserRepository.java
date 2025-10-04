@@ -1,5 +1,7 @@
 package com.realtime.chatting.login.repository;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -18,4 +20,7 @@ public interface UserRepository extends JpaRepository<User, UUID> {
 
     @Query("select u from User u where lower(u.email) = lower(:email)")
     Optional<User> findByEmailCi(@Param("email") String email);
+
+    // 이메일로 여러 명을 한 번에 찾기
+    List<User> findByEmailIn(Collection<String> emails);
 }

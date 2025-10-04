@@ -1,5 +1,6 @@
 package com.realtime.chatting.friend.controller;
 
+import com.realtime.chatting.friend.dto.FriendBriefDto;
 import com.realtime.chatting.friend.dto.FriendRequestDto;
 import com.realtime.chatting.friend.service.FriendService;
 import com.realtime.chatting.login.entity.User;
@@ -22,10 +23,10 @@ public class FriendController {
 
     /** 내 친구 목록(이메일/UUID 어떤 포맷을 쓸지는 팀 규칙에 맞춰) */
     @GetMapping
-    public List<String> myFriends(Authentication auth) {
+    public List<FriendBriefDto> myFriends(Authentication auth) {
         UUID myId = UUID.fromString(auth.getName());
-        // 이메일 목록으로 돌려주고 싶으면 FriendService.myFriendsByUserId 사용
-        return friendService.myFriendsByUserId(myId);
+        // 이름과 이메일을 함께 반환
+        return friendService.myFriendBriefsByUserId(myId);
     }
 
     /** ✅ 친구 요청: identifier(이메일/휴대폰/이름) 중 하나만 보내면 됨 */

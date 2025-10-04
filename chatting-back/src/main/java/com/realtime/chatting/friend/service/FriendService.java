@@ -1,5 +1,6 @@
 package com.realtime.chatting.friend.service;
 
+import com.realtime.chatting.friend.dto.FriendBriefDto;
 import com.realtime.chatting.friend.dto.FriendRequestDto;
 import com.realtime.chatting.friend.entity.FriendRequest;
 import com.realtime.chatting.friend.model.FriendRequestStatus;
@@ -13,11 +14,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.util.List;
-import java.util.Objects;
-import java.util.Optional;
-import java.util.UUID;
+import java.util.*;
+import java.util.function.Function;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -254,5 +254,59 @@ public class FriendService {
                         : fr.getRequester().getEmail())
                 .distinct()
                 .toList();
+    }
+
+    /** 새로 추가: 이름+이메일 DTO 목록 반환 */
+    @Transactional(readOnly = true)
+    public List<FriendBriefDto> myFriendBriefsByUserId(UUID myId) {
+        List<String> rawEmails = myFriendsByUserId(myId);
+        if (rawEmails == null || rawEmails.isEmpty()) return Collections.emptyList();
+
+        // 1) 입력 이메일 정규화: trim → 빈값 제거 → 중복 제거(순서 유지)
+        List<String> emailsOrdered = rawEmails.stream()
+                .filter(Objects::nonNull)
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .distinct() // 순서 유지하며 중복 제거
+                .collect(Collectors.toList());
+
+        if (emailsOrdered.isEmpty()) return Collections.emptyList();
+
+        // 2) 한 번에 조회
+        List<User> users = userRepo.findByEmailIn(emailsOrdered);
+
+        // 3) email(lowercase, trim) → User 매핑
+        Map<String, User> byEmail = users.stream()
+                .filter(Objects::nonNull)
+                .filter(u -> u.getEmail() != null && !u.getEmail().isBlank())
+                .collect(Collectors.toMap(
+                        u -> u.getEmail().trim().toLowerCase(Locale.ROOT), // ✅ 올바른 키
+                        Function.identity(),
+                        (a, b) -> a // 충돌 시 첫 번째 유지
+                ));
+
+        // 4) 원본 순서대로 DTO 생성 (유저가 없으면 name은 null로)
+        List<FriendBriefDto> result = new ArrayList<>(emailsOrdered.size());
+        for (String email : emailsOrdered) {
+            String key = email.trim().toLowerCase(Locale.ROOT);
+            User u = byEmail.get(key);
+
+            String id = (u != null && u.getId() != null) ? u.getId().toString() : null;
+
+            // 표기용 이름 필드 선택: username / displayName 등 환경에 맞게 조정
+            String name = null;
+            if (u != null) {
+                if (u.getUsername() != null && !u.getUsername().isBlank()) {
+                    name = u.getUsername().trim();
+                }
+                // 필요 시:
+                // else if (u.getDisplayName() != null && !u.getDisplayName().isBlank()) {
+                //     name = u.getDisplayName().trim();
+                // }
+            }
+
+            result.add(new FriendBriefDto(id, name, email));
+        }
+        return result;
     }
 }
