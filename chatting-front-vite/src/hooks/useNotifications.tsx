@@ -1,204 +1,258 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import React, {
+    createContext,
+    useContext,
+    useEffect,
+    useMemo,
+    useRef,
+    useState,
+} from 'react'
+import { useLocation } from 'react-router-dom'
+import http from '@/api/http'
+import { ws } from '@/ws'
+import { useAuth } from '@/context/AuthContext'
 
-type UnreadMap  = Record<string, number>
-type PreviewMap = Record<string, string>
-type TsMap      = Record<string, number>
-
-type SummaryEntry = {
-  friendUsername?: string
-  count?: number
-  lastPreview?: string
-  lastTs?: number
+type Ctx = {
+    getUnreadByRoom: (roomId: string) => number
+    resetUnread: (roomId: string) => void
+    setActiveRoom: (roomId?: string) => void
 }
 
-type Notif = {
-  roomId?: string
-  sender?: string
-  preview?: string
-  ts?: number
+const NotificationsContext = createContext<Ctx | null>(null)
+const LS_KEY = 'unreadCounts:v1'
+const SERVER_UNREAD_ENDPOINT = '/unread/summary' // => /api/unread/summary
+const ROOMS_ENDPOINT = '/rooms'                  // => /api/rooms
+
+// 구독 반환형이 함수/객체 어떤 것이든 통일 clean-up
+function toCleanup(x: any): () => void {
+    if (!x) return () => {}
+    if (typeof x === 'function') return x
+    if (typeof x?.unsubscribe === 'function') return () => x.unsubscribe()
+    return () => {}
 }
 
-type NotificationsCtx = {
-  unreadTotal: number
-  unreadByFriend: UnreadMap
-  last: Notif | null
-
-  // setters/업데이트
-  setBulkUnread: (entries: SummaryEntry[]) => void
-  setBulkPreview: (entries: SummaryEntry[]) => void
-  setActiveRoom: (roomId: string | null) => void
-  pushNotif: (n: Notif) => void
-  clearFriend: (friend: string) => void
-  clearAll: () => void
-
-  // getters (null/undefined 안전)
-  getUnread: (friend?: string | null) => number
-  getPreview: (friend?: string | null) => string
-  getPreviewTime: (friend?: string | null) => number | null
+// 메시지에서 발신자(문자열) 뽑기: 백엔드는 sender=email 로 발행
+function pickSender(msg: any): string | undefined {
+    const cand =
+        msg?.senderEmail ?? msg?.email ?? msg?.sender ?? msg?.from ?? msg?.user
+    if (cand == null) return undefined
+    const s = String(cand).trim()
+    return s || undefined
 }
 
-const NotifCtx = createContext<NotificationsCtx | null>(null)
-
-const LS_KEYS = {
-  unread: 'notif.unreadByFriend',
-  preview: 'notif.previewByFriend',
-  previewTs: 'notif.previewTime',
+// 메시지 id (중복 방지용)
+function pickMsgId(msg: any): string | undefined {
+    const cand = msg?.id ?? msg?.messageId ?? msg?.uuid
+    return cand ? String(cand) : undefined
 }
 
-export function NotificationsProvider({ children }: { children: React.ReactNode }): React.ReactElement {
-  const [unreadByFriend, setUnreadByFriend] = useState<UnreadMap>(() => {
-    try { return JSON.parse(localStorage.getItem(LS_KEYS.unread) || 'null') || {} } catch { return {} }
-  })
+export function NotificationsProvider({ children }: { children: React.ReactNode }) {
+    const { user } = useAuth() as any
+    // ✅ meKey는 이메일 우선 (백엔드 sender=email 기준)
+    const meKey = useMemo(() => {
+        const cand =
+            user?.email ??
+            user?.username ?? // fallback
+            user?.id ??
+            user?.userId ??
+            user?.uuid ??
+            user?.uid
+        return cand ? String(cand).trim() : undefined
+    }, [user])
 
-  const [previewByFriend, setPreviewByFriend] = useState<PreviewMap>(() => {
-    try { return JSON.parse(localStorage.getItem(LS_KEYS.preview) || 'null') || {} } catch { return {} }
-  })
-
-  const [previewTime, setPreviewTime] = useState<TsMap>(() => {
-    try { return JSON.parse(localStorage.getItem(LS_KEYS.previewTs) || 'null') || {} } catch { return {} }
-  })
-
-  const [unreadTotal, setUnreadTotal] = useState<number>(0)
-  const [activeRoom, setActiveRoom] = useState<string | null>(null) // 현재 보고 있는 방
-  const [last, setLast] = useState<Notif | null>(null)
-
-  useEffect(() => {
-    try { localStorage.setItem(LS_KEYS.unread, JSON.stringify(unreadByFriend)) } catch {}
-  }, [unreadByFriend])
-
-  useEffect(() => {
-    try { localStorage.setItem(LS_KEYS.preview, JSON.stringify(previewByFriend)) } catch {}
-  }, [previewByFriend])
-
-  useEffect(() => {
-    try { localStorage.setItem(LS_KEYS.previewTs, JSON.stringify(previewTime)) } catch {}
-  }, [previewTime])
-
-  // 서버에서 내려준 초기 요약 반영
-  const setBulkUnread = useCallback((entries: SummaryEntry[]) => {
-    const map: UnreadMap = {}
-    let total = 0
-    for (const e of entries || []) {
-      const friend = e.friendUsername
-      const cnt = e.count ?? 0
-      if (!friend) continue
-      map[friend] = cnt
-      total += cnt
-    }
-    setUnreadByFriend(map)
-    setUnreadTotal(total)
-  }, [])
-
-  // 서버 요약이 미리보기까지 제공
-  const setBulkPreview = useCallback((entries: SummaryEntry[]) => {
-    const p: PreviewMap = {}
-    const t: TsMap = {}
-    for (const e of entries || []) {
-      if (e.friendUsername && e.lastPreview) {
-        p[e.friendUsername] = e.lastPreview
-        if (typeof e.lastTs === 'number') t[e.friendUsername] = e.lastTs
-      }
-    }
-    if (Object.keys(p).length) setPreviewByFriend(prev => ({ ...prev, ...p }))
-    if (Object.keys(t).length) setPreviewTime(prev => ({ ...prev, ...t }))
-  }, [])
-
-  // 새 알림 수신 시 (DM만 friend로 매핑)
-  const pushNotif = useCallback((n: Notif) => {
-  // 현재 열려있는 방이면 카운트하지 않음
-  if (n?.roomId && activeRoom && n.roomId === activeRoom) return
-  setLast(n)
-
-  const friend = n?.sender
-  if (!friend) return                      // ← 여기서 friend가 string으로 확정됨
-
-  // TS에게 확실히 알려주기 위해 지역 변수로 고정
-  const f = friend as string
-
-  if (typeof n.preview === 'string') {     // ← 값도 확정
-    setPreviewByFriend((m: PreviewMap) => ({ ...m, [f]: n.preview as string }))
-  }
-  if (typeof n.ts === 'number') {
-    setPreviewTime((m: TsMap) => ({ ...m, [f]: n.ts as number }))
-  }
-
-  setUnreadByFriend((map: UnreadMap) => {
-    const next: UnreadMap = { ...map, [f]: (map[f] || 0) + 1 }
-    return next
-  })
-  setUnreadTotal((x) => x + 1)
-}, [activeRoom])
-
-  const clearFriend = useCallback((friend: string) => {
-    if (!friend) return
-    setUnreadByFriend(map => {
-      const current = map[friend] || 0
-      if (!current) return map
-      const next = { ...map }
-      delete next[friend]
-      setUnreadTotal(t => Math.max(0, t - current))
-      return next
+    const [unread, setUnread] = useState<Record<string, number>>(() => {
+        try { return JSON.parse(localStorage.getItem(LS_KEY) || '{}') } catch { return {} }
     })
-    // 미리보기는 유지하되 내용을 비움
-    setPreviewByFriend(p => ({ ...p, [friend]: '' }))
-  }, [])
+    const [rooms, setRooms] = useState<Array<{ id: string }>>([])
 
-  const clearAll = useCallback(() => {
-    setUnreadByFriend({})
-    setUnreadTotal(0)
-    try { localStorage.removeItem(LS_KEYS.unread) } catch {}
-  }, [])
+    const activeRoomRef = useRef<string | undefined>(undefined)
+    const recentMsgIds = useRef<Set<string>>(new Set())
 
-  // 🔹 인자에 string | null | undefined 허용 → 호출부가 null을 넘겨도 안전
-  const getUnread = useCallback((friend?: string | null) => {
-    if (!friend) return 0
-    return unreadByFriend[friend] || 0
-  }, [unreadByFriend])
+    // 방별 구독 레지스트리: roomId -> cleanup
+    const roomSubsRef = useRef<Map<string, () => void>>(new Map())
 
-  const getPreview = useCallback((friend?: string | null) => {
-    if (!friend) return ''
-    return previewByFriend[friend] || ''
-  }, [previewByFriend])
+    const location = useLocation()
 
-  const getPreviewTime = useCallback((friend?: string | null) => {
-    if (!friend) return null
-    return previewTime[friend] ?? null
-  }, [previewTime])
+    // 라우트 기준 활성 방 설정
+    useEffect(() => {
+        const m = location.pathname.match(/^\/chat\/([^/]+)/)
+        activeRoomRef.current = m ? m[1] : undefined
+    }, [location.pathname])
 
-  const value = useMemo<NotificationsCtx>(() => ({
-    unreadTotal,
-    unreadByFriend,
-    last,
-    pushNotif,
-    clearFriend,
-    clearAll,
-    getUnread,
-    setBulkUnread,
-    setBulkPreview,
-    setActiveRoom,
-    getPreview,
-    getPreviewTime,
-  }), [
-    unreadTotal,
-    unreadByFriend,
-    last,
-    pushNotif,
-    clearFriend,
-    clearAll,
-    getUnread,
-    setBulkUnread,
-    setBulkPreview,
-    setActiveRoom,
-    getPreview,
-    getPreviewTime,
-  ])
+    const persist = (obj: Record<string, number>) => {
+        setUnread(obj)
+        try { localStorage.setItem(LS_KEY, JSON.stringify(obj)) } catch {}
+    }
 
-  return <NotifCtx.Provider value={value}>{children}</NotifCtx.Provider>
+    // ✅ 초기 미확인 요약 동기화
+    useEffect(() => {
+        (async () => {
+            try {
+                const res = await http.get(SERVER_UNREAD_ENDPOINT) // [{ roomId, count }]
+                if (Array.isArray(res.data)) {
+                    const merged = { ...unread }
+                    for (const row of res.data) {
+                        const rid =
+                            row?.roomId ?? row?.room_id ?? row?.id ?? row?.room
+                        if (rid != null) merged[String(rid)] = Number(row?.count ?? row?.unread ?? row?.unreadCount ?? 0)
+                    }
+                    persist(merged)
+                }
+            } catch {
+                // 서버 미구현/권한 문제는 무시 (WS로도 증분 동작)
+            }
+        })()
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [])
+
+    // ✅ 내 방 목록 가져와서 각 방 토픽 구독 (/topic/room.{id})
+    useEffect(() => {
+        (async () => {
+            try {
+                const res = await http.get(ROOMS_ENDPOINT)
+                const arr = Array.isArray(res.data) ? res.data : []
+                const list: Array<{ id: string }> = []
+                for (const r of arr) {
+                    if (!r?.id) continue
+                    list.push({ id: String(r.id) })
+                }
+                setRooms(list)
+            } catch (e) {
+                // 방 목록 실패는 무시하되 콘솔만
+                console.warn('[useNotifications] /rooms fetch failed', e)
+            }
+        })()
+    }, [])
+
+    // ✅ 방 목록이 바뀔 때마다 개별 구독 재구성
+    useEffect(() => {
+        const subs = roomSubsRef.current
+
+        // 1) 이미 구독 중인데 목록에 없는 방 → 해제
+        for (const [rid, cleanup] of subs) {
+            if (!rooms.some((r) => r.id === rid)) {
+                cleanup()
+                subs.delete(rid)
+            }
+        }
+
+        // 2) 새 방 → 구독 추가
+        for (const r of rooms) {
+            if (subs.has(r.id)) continue
+
+            try {
+                const sub = ws.subscribe(`/topic/room.${r.id}`, (payload: any) => {
+                    try {
+                        const msg = typeof payload === 'string' ? JSON.parse(payload) : payload
+
+                        // 중복 방지
+                        const mid = pickMsgId(msg) || `${r.id}:${Date.now()}`
+                        if (recentMsgIds.current.has(mid)) return
+                        recentMsgIds.current.add(mid)
+                        if (recentMsgIds.current.size > 1000) {
+                            recentMsgIds.current = new Set(Array.from(recentMsgIds.current).slice(-400))
+                        }
+
+                        // 내 메시지는 제외
+                        const sender = pickSender(msg)
+                        if (meKey && sender === meKey) return
+
+                        // 활성 방이면 증가 X (읽음 처리 트리거는 ChatRoomPage에서)
+                        if (activeRoomRef.current === r.id) return
+
+                        // ✅ unread +1
+                        setUnread((prev) => {
+                            const next = { ...prev, [r.id]: (prev[r.id] || 0) + 1 }
+                            try { localStorage.setItem(LS_KEY, JSON.stringify(next)) } catch {}
+                            return next
+                        })
+                    } catch (err) {
+                        console.error('[useNotifications] room message parse error:', err, payload)
+                    }
+                })
+                const cleanup = toCleanup(sub)
+                subs.set(r.id, cleanup)
+            } catch (e) {
+                console.error('[useNotifications] subscribe failed for room', r.id, e)
+            }
+        }
+
+        return () => {
+            // 컴포넌트 언마운트 시 전체 해제
+            for (const [, cleanup] of subs) cleanup()
+            subs.clear()
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [rooms, meKey])
+
+    // 선택: 전역 브로드캐스트가 있다면 유지 (없으면 제거해도 됩니다)
+    // useEffect(() => {
+    //   const sub = ws.subscribe('/topic/messages', ...) // 프로젝트에 있다면
+    //   return toCleanup(sub)
+    // }, [meKey])
+
+    function getUnreadByRoom(roomId: string): number {
+        return unread[roomId] || 0
+    }
+
+    function resetUnread(roomId: string) {
+        const next = { ...unread }
+        if (next[roomId]) {
+            next[roomId] = 0
+            persist(next)
+            try {
+                const bc = new BroadcastChannel('unread-sync')
+                bc.postMessage({ type: 'unread-merge', payload: { [roomId]: 0 } })
+                bc.close()
+            } catch {}
+        }
+    }
+
+    async function markRead(roomId: string, lastMessageId?: string) {
+        try {
+            await http.post(`/rooms/${roomId}/read`, { lastMessageId })
+        } catch {
+            // 서버 반영 실패해도 로컬은 0으로
+        }
+        resetUnread(roomId)
+    }
+
+    function setActiveRoom(roomId?: string) {
+        activeRoomRef.current = roomId
+        if (roomId) {
+            // 활성화 직후 바로 0으로 (서버 커서 반영은 ChatRoomPage에서 메시지 렌더 후 트리거해도 됨)
+            resetUnread(roomId)
+        }
+    }
+
+    // 페이지 가시화 시 현재 방 읽음 처리
+    useEffect(() => {
+        const onVis = () => {
+            if (document.visibilityState === 'visible' && activeRoomRef.current) {
+                void markRead(activeRoomRef.current)
+            }
+        }
+        document.addEventListener('visibilitychange', onVis)
+        return () => document.removeEventListener('visibilitychange', onVis)
+    }, [])
+
+    const value = useMemo<Ctx>(
+        () => ({
+            getUnreadByRoom,
+            resetUnread,
+            setActiveRoom,
+        }),
+        [unread]
+    )
+
+    return (
+        <NotificationsContext.Provider value={value}>
+            {children}
+        </NotificationsContext.Provider>
+    )
 }
 
-// 훅: 컨텍스트가 없으면 명확한 에러
-export const useNotifications = (): NotificationsCtx => {
-  const ctx = useContext(NotifCtx)
-  if (!ctx) throw new Error('useNotifications must be used within <NotificationsProvider>')
-  return ctx
+export function useNotifications() {
+    const ctx = useContext(NotificationsContext)
+    if (!ctx) throw new Error('useNotifications must be used within NotificationsProvider')
+    return ctx
 }

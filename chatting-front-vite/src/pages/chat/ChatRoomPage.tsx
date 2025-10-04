@@ -1,18 +1,19 @@
+// src/pages/chat/ChatRoomPage.tsx
 import React, { useEffect, useRef, useState, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import http from '@/api/http'
 import '@/styles/chat.css'
 import { useAuth } from '@/context/AuthContext'
 import { useNotifications } from '@/hooks/useNotifications'
-import { ws } from '@/ws' // 전역 WS 싱글톤
+import { ws } from '@/ws'
 
 type RawMsg = {
-    id?: string
-    senderId?: string | number
+    id?: string            // DB PK
+    messageId?: string     // 논리적 메시지 ID
+    roomId?: string
     sender?: string
-    senderUsername?: string
-    user?: string
-    from?: string
+    username?: string
+
     message?: string
     text?: string
     content?: string
@@ -22,14 +23,17 @@ type RawMsg = {
 }
 
 type UiMsg = {
-    id: string
-    senderId?: string
+    id: string                  // 화면/중복제거용: messageId > id > uuid
+    roomId?: string
     sender?: string
-    senderUsername?: string
-    user?: string
-    from?: string
+    username?: string
     content: string
     createdAt: string | number | null
+}
+
+type RoomLite = {
+    id: string
+    members?: Array<string> // 이메일 또는 UUID 문자열들
 }
 
 function toStr(x: unknown): string | undefined {
@@ -39,68 +43,130 @@ function toStr(x: unknown): string | undefined {
 }
 
 function normalize(raw: RawMsg): UiMsg {
-    const id = raw.id ?? crypto.randomUUID()
+    const normId =
+        toStr(raw.messageId) ??
+        toStr(raw.id) ??
+        crypto.randomUUID()
+
     const content =
         toStr(raw.message) ??
         toStr(raw.text) ??
         toStr(raw.content) ??
         toStr(raw.body) ??
         ''
+
     const createdAt = (raw.createdAt as any) ?? (raw.time as any) ?? null
 
     return {
-        id,
-        senderId: toStr(raw.senderId),
+        id: normId!,
+        roomId: toStr(raw.roomId),
         sender: toStr(raw.sender),
-        senderUsername: toStr(raw.senderUsername),
-        user: toStr(raw.user),
-        from: toStr(raw.from),
+        username: toStr(raw.username),
         content,
         createdAt,
     }
 }
 
-/** 사용자 동일성 판단 */
-function sameUser(meKey: string | undefined | null, msg: UiMsg): boolean {
-    const key = toStr(meKey)?.toLowerCase()
-    if (!key) return false
-    const candidates = [msg.senderId, msg.sender, msg.senderUsername, msg.user, msg.from]
-    for (const c of candidates) if (toStr(c)?.toLowerCase() === key) return true
+/** 식별자 형태 판별 */
+const UUID_RE =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+function isUuidLike(s?: string) { return !!s && UUID_RE.test(s) }
+function isEmailLike(s?: string) { return !!s && EMAIL_RE.test(s) }
+
+/** UUID는 하이픈 제거 + 소문자, 그 외는 소문자 비교 */
+function eqId(a?: string, b?: string): boolean {
+    if (!a || !b) return false
+    const A = a.trim()
+    const B = b.trim()
+    const aIsUuid = isUuidLike(A)
+    const bIsUuid = isUuidLike(B)
+    if (aIsUuid && bIsUuid) {
+        const na = A.toLowerCase().replace(/-/g, '')
+        const nb = B.toLowerCase().replace(/-/g, '')
+        return na === nb
+    }
+    // 이메일/기타는 소문자 비교
+    return A.toLowerCase() === B.toLowerCase()
+}
+
+/** 나/상대 판정
+ * - 내 후보키: userUuid, email (둘 다 비교)
+ * - 메시지에서 비교대상: sender(1순위), username(보조: username에 이메일/UUID가 올 수 있는 환경 대비)
+ * - 메시지 id는 사용자 식별과 무관 → 비교 제외
+ */
+function sameUser(meKeys: (string | undefined | null)[], msg: UiMsg): boolean {
+    const candidates: (string | undefined)[] = [msg.sender, msg.username]
+    for (const me of meKeys) {
+        const mk = toStr(me)
+        if (!mk) continue
+        for (const c of candidates) {
+            const ck = toStr(c)
+            if (ck && eqId(mk, ck)) return true
+        }
+    }
     return false
+}
+
+/** 메시지 라벨: 내 메시지면 '나', 아니면 username 우선 표시(fallback 포함) */
+function renderSenderLabel(m: UiMsg, mine: boolean, peerLabel: string): string {
+    if (mine) return '나'
+    return (
+        m.username ||   // ① 서버가 내려주는 표시용 이름
+        m.sender ||     // ② 식별자(이메일/UUID 등)
+        m.id ||         // ③ 메시지 ID로라도 구분
+        peerLabel ||    // ④ 방 정보 라벨
+        'unknown'       // ⑤ 최종 폴백
+    )
 }
 
 export default function ChatRoomPage(): React.ReactElement {
     const { roomId } = useParams<{ roomId: string }>()
     const nav = useNavigate()
-    const { userId, logout } = useAuth() as { userId?: string | null; logout: (reason?: string)=>void }
-    const { setActiveRoom, clearFriend } = useNotifications()
 
-    const meKey = useMemo(() => toStr(userId)?.toLowerCase() ?? '', [userId])
+    // 내 식별자: UUID 우선, 없으면 email
+    const { userUuid, email, logout } = useAuth() as {
+        userUuid?: string | null
+        email?: string | null
+        logout: (reason?: string) => void
+    }
 
+    const { setActiveRoom } = useNotifications()
+
+    // 내 후보 키(여러 개를 동시에 보유)
+    const myKeys = useMemo(
+        () => [toStr(userUuid), toStr(email)].filter(Boolean) as string[],
+        [userUuid, email]
+    )
+
+    // 상대 정보
+    const [peerKey, setPeerKey] = useState<string>('')     // 비교/알림용(이메일 or UUID)
+    const [peerLabel, setPeerLabel] = useState<string>('') // 화면 표시용(이메일 권장)
+
+    // 메시지/입력/연결 상태
     const [messages, setMessages] = useState<UiMsg[]>([])
     const [text, setText] = useState('')
     const [connected, setConnected] = useState<boolean>(ws.isConnected())
 
+    // refs
     const listRef = useRef<HTMLDivElement | null>(null)
     const endRef = useRef<HTMLDivElement | null>(null)
     const inputRef = useRef<HTMLInputElement | null>(null)
     const inputWrapRef = useRef<HTMLDivElement | null>(null)
-    const peerRef = useRef<string | null>(null)
 
-    /** ----- iOS 키보드/뷰포트 제어용 상태 ----- */
-    const suppressRef = useRef(false)                 // 강제 스크롤 억제 중 여부
+    // iOS 키보드 제어
+    const suppressRef = useRef(false)
     const settleTimerRef = useRef<number | null>(null)
     const rafTokenRef = useRef<number | null>(null)
-
-    const baseVhRef = useRef<number>(0)               // 최초 visualViewport 높이(baseline)
-    const kbPxRef = useRef<number>(0)                 // 추정 키보드 높이(px)
-    const closingRef = useRef<boolean>(false)         // blur 이후 키보드 닫힘 진행 중 플래그
-    const KB_THRESHOLD = 80                           // 키보드 판단 임계값(px)
+    const baseVhRef = useRef<number>(0)
+    const kbPxRef = useRef<number>(0)
+    const closingRef = useRef<boolean>(false)
+    const KB_THRESHOLD = 80
 
     const setCSSVar = (k: string, v: string) =>
         document.documentElement.style.setProperty(k, v)
 
-    /** 즉시 맨 아래로 (fallback 포함) */
     const scrollToEnd = () => {
         const el = endRef.current
         if (!el) return
@@ -112,87 +178,76 @@ export default function ChatRoomPage(): React.ReactElement {
         }
     }
 
-    /** visualViewport 기반 높이/키보드 변수 갱신 (키보드 “실측” 판정) */
     const setViewportVars = () => {
-        const vv: any = (window as any).visualViewport;
-        const currentVh = Math.round(vv?.height ?? window.innerHeight);
-        if (!baseVhRef.current) baseVhRef.current = currentVh;
+        const vv: any = (window as any).visualViewport
+        const currentVh = Math.round(vv?.height ?? window.innerHeight)
+        if (!baseVhRef.current) baseVhRef.current = currentVh
 
-        setCSSVar('--vvh', `${currentVh}px`);
+        setCSSVar('--vvh', `${currentVh}px`)
 
-        const rawKb = Math.max(0, baseVhRef.current - currentVh);
-        const kb = rawKb >= KB_THRESHOLD ? rawKb : 0;
-        kbPxRef.current = kb;
-        setCSSVar('--kb', `${kb}px`);
+        const rawKb = Math.max(0, baseVhRef.current - currentVh)
+        const kb = rawKb >= KB_THRESHOLD ? rawKb : 0
+        kbPxRef.current = kb
+        setCSSVar('--kb', `${kb}px`)
 
         if (kb > 0) {
-            document.documentElement.classList.add('kb-open');
+            document.documentElement.classList.add('kb-open')
         } else {
             if (closingRef.current) {
-                document.documentElement.classList.remove('kb-open');
-                closingRef.current = false;
+                document.documentElement.classList.remove('kb-open')
+                closingRef.current = false
             } else {
-                document.documentElement.classList.remove('kb-open');
+                document.documentElement.classList.remove('kb-open')
             }
-            // geometrychange가 정상적으로 왔으니 failsafe 타이머 제거
             if (settleTimerRef.current) {
-                window.clearTimeout(settleTimerRef.current);
-                settleTimerRef.current = null;
+                window.clearTimeout(settleTimerRef.current)
+                settleTimerRef.current = null
             }
         }
-    };
+    }
 
-    /** 입력바 실제 높이 1회/회전 시만 측정 */
     const setInputHeightVar = () => {
         const h = Math.round(inputWrapRef.current?.getBoundingClientRect().height ?? 56)
         setCSSVar('--input-h', `${h}px`)
     }
 
-    /** 입력 포커스/블러 */
-    const onInputFocus = () => {
-        // 선점프 방지: 여기선 아무 스타일 변경 X
+    const onInputFocus = () => {}
+    const onInputBlur = () => {
+        closingRef.current = true
+        suppressRef.current = false
+        if (settleTimerRef.current) window.clearTimeout(settleTimerRef.current)
+        settleTimerRef.current = window.setTimeout(() => {
+            document.documentElement.classList.remove('kb-open')
+            closingRef.current = false
+        }, 500)
     }
 
-    const onInputBlur = () => {
-        closingRef.current = true;
-        suppressRef.current = false;
-
-        // failsafe: 혹시 geometrychange가 오지 않는 구형/특정 웹뷰 대비
-        if (settleTimerRef.current) window.clearTimeout(settleTimerRef.current);
-        settleTimerRef.current = window.setTimeout(() => {
-            document.documentElement.classList.remove('kb-open');
-            closingRef.current = false;
-        }, 500); // 300~500ms 권장
-    };
-
-    /** ---- 세션 가드: 진입 시 userId/WS 연결 확인 ---- */
+    /** 세션 가드 */
     useEffect(() => {
-        // 필수 가드: 토큰/사용자 없음 > 로그아웃
-        if (!userId) {
-            // alert('no userId')
-            logout('no userId')
-            nav('/login', { replace: true })
+        /*if (!userUuid && !email) {
+            logout('no identity')
+            nav('/auth', { replace: true })
             return
-        }
+        }*/
 
         let graceTimer: number | null = null
         let tried = 0
-        const MAX_GRACE_MS = 10000           // 10s (처음 콜드 스타트/프록시 지연 커버)
-        const RETRY_BASE_MS = 800            // 재시도 백오프 시작
-        const RETRY_MAX_MS  = 5000
+        const MAX_GRACE_MS = 10000
+        const RETRY_BASE_MS = 800
+        const RETRY_MAX_MS = 5000
 
         const startGrace = () => {
             if (graceTimer) window.clearTimeout(graceTimer)
             graceTimer = window.setTimeout(() => {
-                // 여기서 곧장 로그아웃하지 말고, UI 표시 + 재시도
-                console.warn('WS still disconnected: showing offline but keep retrying')
-                //alert('ws disconnected (retrying)')
-                ws.ensureConnected()             // 내부 재시도 트리거
+                ws.ensureConnected()
             }, MAX_GRACE_MS)
         }
 
         const clearGrace = () => {
-            if (graceTimer) { window.clearTimeout(graceTimer); graceTimer = null }
+            if (graceTimer) {
+                window.clearTimeout(graceTimer)
+                graceTimer = null
+            }
         }
 
         const onUp = () => {
@@ -201,17 +256,14 @@ export default function ChatRoomPage(): React.ReactElement {
         }
 
         const onDown = () => {
-            // 끊김 감지: 점진 백오프로 재연결 시도
             tried += 1
             const delay = Math.min(RETRY_BASE_MS * Math.pow(2, tried - 1), RETRY_MAX_MS)
             window.setTimeout(() => ws.ensureConnected(), delay)
         }
 
-        // 이벤트 먼저 구독 → 연결 시도 (레이스 방지)
         ws.onConnect(onUp)
         ws.onDisconnect(onDown)
 
-        // 최초 연결 시도 + 그레이스 타이머 가동
         ws.ensureConnected()
         startGrace()
 
@@ -220,34 +272,30 @@ export default function ChatRoomPage(): React.ReactElement {
             ws.offConnect(onUp)
             ws.offDisconnect(onDown)
         }
-    }, [userId, logout, nav])
+    }, [userUuid, email, logout, nav])
 
-    /** mount: 초기 세팅 */
+    /** mount: 뷰포트 세팅 */
     useEffect(() => {
         setViewportVars()
         requestAnimationFrame(setInputHeightVar)
 
         const vv: any = (window as any).visualViewport
-
         const onVV = () => {
             if (rafTokenRef.current) return
             rafTokenRef.current = requestAnimationFrame(() => {
                 rafTokenRef.current = null
                 setViewportVars()
-                // 키보드가 열린 뒤에만 자동 스크롤
                 if (kbPxRef.current > 0 && !suppressRef.current) scrollToEnd()
             })
         }
 
         if (vv) {
-            // iOS 16+ 에서는 geometrychange 가 가장 정확
-            const type = ('ongeometrychange' in vv) ? 'geometrychange' : 'resize'
+            const type = 'ongeometrychange' in vv ? 'geometrychange' : 'resize'
             vv.addEventListener(type, onVV, { passive: true })
             vv.addEventListener('scroll', onVV, { passive: true })
         }
 
         const onResize = () => {
-            // 회전 등 큰 변화 시 baseline 리셋 후 재계산
             baseVhRef.current = 0
             setViewportVars()
             setInputHeightVar()
@@ -271,6 +319,34 @@ export default function ChatRoomPage(): React.ReactElement {
         }
     }, [])
 
+    /** 방 정보에서 상대 라벨/키 구하기 */
+    useEffect(() => {
+        if (!roomId) return
+        let cancelled = false
+
+        ;(async () => {
+            try {
+                const res = await http.get<RoomLite[]>('/rooms')
+                const rooms = Array.isArray(res.data) ? res.data : []
+                const room = rooms.find(r => r.id === roomId)
+                if (!room) return
+
+                const mk = (toStr(userUuid) || toStr(email) || '')!.toLowerCase()
+                const members = (room.members || []).map(m => String(m))
+                const other = members.find(m => m && m.toLowerCase() !== mk) || ''
+
+                if (!cancelled) {
+                    setPeerKey(other)
+                    setPeerLabel(other)
+                }
+            } catch {
+                // ignore
+            }
+        })()
+
+        return () => { cancelled = true }
+    }, [roomId, userUuid, email])
+
     /** 방 진입/이동: 읽음 + 히스토리 */
     useEffect(() => {
         if (!roomId) return
@@ -279,12 +355,7 @@ export default function ChatRoomPage(): React.ReactElement {
 
         ;(async () => {
             try {
-                const { data } = await http.post(`/rooms/${encodeURIComponent(roomId)}/read`)
-                const friend = data?.friendUsername || null
-                if (friend) {
-                    peerRef.current = friend
-                    clearFriend(friend)
-                }
+                await http.post(`/rooms/${encodeURIComponent(roomId)}/read`)
             } catch {}
 
             if (cancelled) return
@@ -299,15 +370,13 @@ export default function ChatRoomPage(): React.ReactElement {
 
         return () => {
             cancelled = true
-            setActiveRoom(null)
-            const friend = peerRef.current
+            // setActiveRoom(null)
             ;(async () => {
                 try { await http.post(`/rooms/${encodeURIComponent(roomId)}/read`) } catch {}
-                if (friend) clearFriend(friend)
             })()
-            setActiveRoom(null)
+            // setActiveRoom(null)
         }
-    }, [roomId, setActiveRoom, clearFriend])
+    }, [roomId, setActiveRoom])
 
     /** WebSocket 구독 */
     useEffect(() => {
@@ -328,7 +397,10 @@ export default function ChatRoomPage(): React.ReactElement {
                 })
                 requestAnimationFrame(() => { if (!suppressRef.current) scrollToEnd() })
             } catch {
-                setMessages((prev) => [...prev, normalize({ sender: 'system', message: String(payload) } as any)])
+                setMessages((prev) => [
+                    ...prev,
+                    normalize({ sender: 'system', message: String(payload) } as any),
+                ])
                 requestAnimationFrame(() => { if (!suppressRef.current) scrollToEnd() })
             }
         })
@@ -355,8 +427,10 @@ export default function ChatRoomPage(): React.ReactElement {
         }
     }, [roomId])
 
-    /** 메시지 변경 시 하단 정렬 (억제 중이면 skip) */
-    useEffect(() => { if (!suppressRef.current) scrollToEnd() }, [messages])
+    /** 메시지 변경 시 하단 정렬 */
+    useEffect(() => {
+        if (!suppressRef.current) scrollToEnd()
+    }, [messages])
 
     const send = async () => {
         const body = text.trim()
@@ -377,22 +451,24 @@ export default function ChatRoomPage(): React.ReactElement {
         }
     }
 
+    const headerTitle = peerLabel || roomId
+    const displayMe = toStr(email) || toStr(userUuid) || '알 수 없음'
+
     return (
         <div className="chat">
             <div className="chat__header">
                 <button onClick={() => nav('/chat')}>← chat</button>
-                <h2>Room: {roomId}</h2>
-                <span className="me">사용자명 : {toStr(userId) || '알 수 없음'}</span>
+                <h2>{headerTitle}</h2>
+                <span className="me">사용자: {displayMe}</span>
             </div>
 
             <div className="chat__list" id="chat-list" ref={listRef}>
                 {messages.map((m) => {
-                    const mine = sameUser(meKey, m)
+                    const mine = sameUser(myKeys, m)
+                    const label = renderSenderLabel(m, mine, peerLabel)
                     return (
                         <div key={m.id} className={`chat__msg ${mine ? 'me' : ''}`}>
-                            <div className="chat__sender">
-                                {m.senderUsername ?? m.sender ?? m.user ?? m.from ?? m.senderId ?? 'unknown'}
-                            </div>
+                            <div className="chat__sender">{label}</div>
                             <div className="chat__bubble">{m.content}</div>
                         </div>
                     )

@@ -23,7 +23,7 @@ export default function RequestsPanel(): JSX.Element {
     const [outgoing, setOutgoing] = useState<Req[]>([])
     const [err, setErr] = useState('')
     const [busyId, setBusyId] = useState<string | number | null>(null)
-    const { userId } = useAuth() as any
+    const { userUuid } = useAuth() as any
 
     const load = async () => {
         try {
@@ -42,12 +42,12 @@ export default function RequestsPanel(): JSX.Element {
 
     // 실시간 구독(요청 생성/거절/취소/수락 등)
     useEffect(() => {
-        if (!userId) return
-        const unsub = ws.subscribe(`/topic/friend-requests/${userId}`, () => {
+        if (!userUuid) return
+        const unsub = ws.subscribe(`/topic/friend-requests/${userUuid}`, () => {
             load()
         })
         return () => unsub()
-    }, [userId])
+    }, [userUuid])
 
     const getSender = (r: Req) =>
         r.sender || r.from || r.fromUser || r.requester || r.senderUsername || ''

@@ -2,6 +2,7 @@ package com.realtime.chatting.chat.service;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 import org.springframework.data.domain.PageRequest;
@@ -22,17 +23,17 @@ public class MessageService {
         return messageRepo.findByRoomIdOrderByCreatedAtDesc(roomId, PageRequest.of(0, limit)).stream()
             .sorted((a,b) -> a.getCreatedAt().compareTo(b.getCreatedAt()))
             .map(m -> MessageDto.builder()
-                .id(m.getId()).roomId(m.getRoomId()).sender(m.getSender()).content(m.getContent()).createdAt(m.getCreatedAt())
+                .id(m.getId()).roomId(m.getRoomId()).messageId(UUID.fromString(m.getMessageId())).username(m.getUsername()).sender(m.getSender()).content(m.getContent()).createdAt(m.getCreatedAt())
                 .build())
             .collect(Collectors.toList());
     }
 
-    public MessageDto save(String roomId, String sender, String content) {
+    public MessageDto save(String roomId, String messageId, String username, String sender, String content) {
         ChatMessage m = ChatMessage.builder()
-            .roomId(roomId).sender(sender).content(content).createdAt(Instant.now())
+            .roomId(roomId).messageId(messageId).sender(sender).username(username).content(content).createdAt(Instant.now())
             .build();
         m = messageRepo.save(m);
         return MessageDto.builder()
-            .id(m.getId()).roomId(roomId).sender(sender).content(content).createdAt(m.getCreatedAt()).build();
+            .id(m.getId()).roomId(roomId).messageId(UUID.fromString(messageId)).sender(sender).username(username).content(content).createdAt(m.getCreatedAt()).build();
     }
 }

@@ -16,20 +16,20 @@ function BellIcon({ filled = false }: { filled?: boolean }) {
     )
 }
 
-type Props = { userId?: string | number }
+type Props = { userUuid?: string | number }
 
-export default function NotificationsBell({ userId }: Props) {
+export default function NotificationsBell({ userUuid }: Props) {
     const [open, setOpen] = useState(false)
     const [unseenCount, setUnseenCount] = useState(0)
     const overlayRef = useRef<HTMLDivElement | null>(null)
 
     useEffect(() => {
-        if (!userId) return
-        const unsub = ws.subscribe(`/topic/friend-requests/${userId}`, () => {
+        if (!userUuid) return
+        const unsub = ws.subscribe(`/topic/friend-requests/${userUuid}`, () => {
             setUnseenCount((prev) => (open ? prev : prev + 1))
         })
         return () => unsub()
-    }, [userId, open])
+    }, [userUuid, open])
 
     useEffect(() => {
         if (!open) return

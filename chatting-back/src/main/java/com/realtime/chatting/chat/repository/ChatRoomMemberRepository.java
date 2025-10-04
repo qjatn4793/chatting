@@ -1,74 +1,84 @@
 package com.realtime.chatting.chat.repository;
 
-import java.util.List;
-import java.util.Optional;
+import com.realtime.chatting.chat.dto.UnreadFriendDto;
+import com.realtime.chatting.chat.entity.ChatRoom;
+import com.realtime.chatting.chat.entity.ChatRoomMember;
+import com.realtime.chatting.login.entity.User;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-import com.realtime.chatting.chat.entity.ChatRoomMember;
-import com.realtime.chatting.login.entity.User;
-import com.realtime.chatting.chat.dto.UnreadFriendDto;
-import com.realtime.chatting.chat.entity.ChatRoom;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
 
 public interface ChatRoomMemberRepository extends JpaRepository<ChatRoomMember, Long> {
+
     List<ChatRoomMember> findByUser(User user);
+
     Optional<ChatRoomMember> findByRoomAndUser(ChatRoom room, User user);
+
     List<ChatRoomMember> findByRoom(ChatRoom room);
-    
+
+    /** 방 참여자들의 UUID 목록 */
     @Query("""
-            select m.user.username
-            from ChatRoomMember m
-            where m.room.id = :roomId
-            """)
-     List<String> findParticipantUsernames(@Param("roomId") String roomId);
-    
+           select m.user.id
+           from ChatRoomMember m
+           where m.room.id = :roomId
+           """)
+    List<UUID> findParticipantIds(@Param("roomId") String roomId);
+
+    /** 미읽음 +1 (보낸 본인 제외) */
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("""
            update ChatRoomMember m
            set m.unreadCount = m.unreadCount + 1
            where m.room.id = :roomId
-             and m.user.username <> :sender
+             and m.user.id <> :senderId
            """)
-    int bumpUnread(@Param("roomId") String roomId, @Param("sender") String sender);
+    int bumpUnread(@Param("roomId") String roomId, @Param("senderId") UUID senderId);
 
+    /** 내 미읽음 0으로 */
     @Modifying(clearAutomatically = true)
     @Query("""
            update ChatRoomMember m
            set m.unreadCount = 0
            where m.room.id = :roomId
-             and m.user.username = :username
+             and m.user.id = :meId
            """)
-    int resetUnread(@Param("roomId") String roomId, @Param("username") String username);
+    int resetUnread(@Param("roomId") String roomId, @Param("meId") UUID meId);
 
-    // 로그인 직후, DM 방에서 내 미읽음 요약 (DM은 참여자 2명 가정)
+    /** DM 방 기준, 내 미읽음 요약(상대 UUID 문자열, 카운트) */
     @Query("""
-       select new com.realtime.chatting.chat.dto.UnreadFriendDto(om.user.username, m.unreadCount)
+       select new com.realtime.chatting.chat.dto.UnreadFriendDto(
+           cast(om.user.id as string),
+           m.unreadCount
+       )
        from ChatRoomMember m
          join m.room r
          join ChatRoomMember om on om.room = r and om.user <> m.user
        where r.type = com.realtime.chatting.chat.entity.ChatRoom.Type.DM
-         and m.user.username = :me
+         and m.user.id = :meId
          and m.unreadCount > 0
        """)
-    List<UnreadFriendDto> findDmUnreadOf(@Param("me") String me);
+    List<UnreadFriendDto> findDmUnreadOf(@Param("meId") UUID meId);
 
-    // 필요시: 방별로 내 unread 쿼리
+    /** 방별 내 미읽음 */
     @Query("""
        select m.unreadCount
        from ChatRoomMember m
-       where m.room.id = :roomId and m.user.username = :me
+       where m.room.id = :roomId and m.user.id = :meId
        """)
-    Integer findMyUnread(@Param("roomId") String roomId, @Param("me") String me);
-    
-    // DM 방에서 "나(me)"의 상대(동일 방의 다른 멤버) 아이디 반환
+    Integer findMyUnread(@Param("roomId") String roomId, @Param("meId") UUID meId);
+
+    /** DM 방에서 "나"의 상대(UUID 문자열) */
     @Query("""
-           select om.user.username
+           select cast(om.user.id as string)
            from ChatRoomMember m
              join ChatRoomMember om on om.room = m.room and om.user <> m.user
            where m.room.id = :roomId
-             and m.user.username = :me
+             and m.user.id = :meId
            """)
-    String findDmPeerUsername(@Param("roomId") String roomId, @Param("me") String me);
+    String findDmPeerId(@Param("roomId") String roomId, @Param("meId") UUID meId);
 }

@@ -6,7 +6,7 @@ import BottomNav from '@/bootstrap/BottomNav'
 import '@/styles/app-shell.css'
 
 export default function AppShell(): JSX.Element {
-    const { userId, logout } = useAuth() as any
+    const { email, logout } = useAuth() as any
 
     // ✅ 정확히 /chat/:roomId 일 때만 "상세"로 판단
     const isChatDetail = !!useMatch('/chat/:roomId')
@@ -21,9 +21,9 @@ export default function AppShell(): JSX.Element {
                 {!isChatDetail && (
                 <header className="app__topbar app-shell__header">
                     <div className="app__topbar__left">
-                        <div className="me-pill" title={userId || '알 수 없음'}>
+                        <div className="me-pill" title={email || '알 수 없음'}>
                             <span className="me-pill__label">사용자명 : </span>
-                            <strong className="me-pill__name">{userId || '알 수 없음'}</strong>
+                            <strong className="me-pill__name">{email || '알 수 없음'}</strong>
                         </div>
                     </div>
                     <div className="app__topbar__right">

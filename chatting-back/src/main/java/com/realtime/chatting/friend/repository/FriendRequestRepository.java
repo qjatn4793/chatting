@@ -6,22 +6,49 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 public interface FriendRequestRepository extends JpaRepository<FriendRequest, Long> {
 
-    Optional<FriendRequest> findByRequester_UsernameAndReceiver_UsernameAndStatusIn(
-            String requester, String receiver, List<FriendRequestStatus> statuses);
+    /* ===================== 이메일 기반 (FriendService가 사용하는 메서드) ===================== */
 
-    List<FriendRequest> findByRequester_UsernameAndStatus(String requester, FriendRequestStatus status);
-    List<FriendRequest> findByReceiver_UsernameAndStatus(String receiver, FriendRequestStatus status);
+    // 받은 보류 요청 목록
+    List<FriendRequest> findByReceiver_EmailAndStatus(String receiverEmail, FriendRequestStatus status);
 
-    Optional<FriendRequest> findByIdAndReceiver_Username(Long id, String receiver);
+    // 내가 보낸 보류 요청 목록
+    List<FriendRequest> findByRequester_EmailAndStatus(String requesterEmail, FriendRequestStatus status);
 
-    // 친구목록 계산용: (me가 요청자거나 수신자이고 상태가 ACCEPTED)
-    List<FriendRequest> findByStatusAndRequester_UsernameOrStatusAndReceiver_Username(
-            FriendRequestStatus s1, String me1, FriendRequestStatus s2, String me2);
-    
-    // 친구 여부 체크용 exists 쿼리 (양방향 검사에 사용)
-    boolean existsByStatusAndRequester_UsernameAndReceiver_Username(
-            FriendRequestStatus status, String requester, String receiver);
+    // 중복/역중복(보류/수락 상태 포함) 확인용
+    Optional<FriendRequest> findByRequester_EmailAndReceiver_EmailAndStatusIn(
+            String requesterEmail, String receiverEmail, List<FriendRequestStatus> statuses);
+
+    // 수락/거절 시 본인 수신자 권한 확인
+    Optional<FriendRequest> findByIdAndReceiver_Email(Long id, String receiverEmail);
+
+    // 친구 여부(양방향) 확인용 exists
+    boolean existsByStatusAndRequester_EmailAndReceiver_Email(
+            FriendRequestStatus status, String requesterEmail, String receiverEmail);
+
+    // 내 친구 목록 계산용(수락된 요청 중 requester/receiver 한쪽이 나인 것)
+    List<FriendRequest> findByStatusAndRequester_EmailOrStatusAndReceiver_Email(
+            FriendRequestStatus status1, String requesterEmail,
+            FriendRequestStatus status2, String receiverEmail);
+
+
+    /* ===================== (선택) UUID 기반 - 다른 코드 호환 필요 시 유지 ===================== */
+
+    List<FriendRequest> findByReceiver_IdAndStatus(UUID receiverId, FriendRequestStatus status);
+    List<FriendRequest> findByRequester_IdAndStatus(UUID requesterId, FriendRequestStatus status);
+
+    Optional<FriendRequest> findByRequester_IdAndReceiver_IdAndStatusIn(
+            UUID requesterId, UUID receiverId, List<FriendRequestStatus> statuses);
+
+    Optional<FriendRequest> findByIdAndReceiver_Id(Long id, UUID receiverId);
+
+    boolean existsByStatusAndRequester_IdAndReceiver_Id(
+            FriendRequestStatus status, UUID requesterId, UUID receiverId);
+
+    List<FriendRequest> findByStatusAndRequester_IdOrStatusAndReceiver_Id(
+            FriendRequestStatus status1, UUID requesterId,
+            FriendRequestStatus status2, UUID receiverId);
 }

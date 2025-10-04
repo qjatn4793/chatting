@@ -16,11 +16,17 @@ public class ChatMessage {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Column(name="message_id", nullable = false, length = 40)
+    private String messageId;
+
     @Column(name="room_id", nullable = false, length = 40)
     private String roomId;
 
     @Column(nullable = false, length = 60)
     private String sender; // username
+
+    @Column(nullable = false, length = 60)
+    private String username;
 
     @Column(nullable = false, length = 2000)
     private String content;

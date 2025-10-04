@@ -34,7 +34,7 @@ public class SecurityConfig {
                 // STOMP 핸드셰이크
                 .requestMatchers("/ws/**").permitAll()
                 // 인증/회원가입(프로젝트에 맞게 조정)
-                .requestMatchers("/api/auth/**", "/login", "/register").permitAll()
+                .requestMatchers("/api/auth/**", "/login", "/register", "/static/profile/**").permitAll()
                 // swagger 관련
                 .requestMatchers(
                         "/swagger-ui.html", "/swagger-ui/**",

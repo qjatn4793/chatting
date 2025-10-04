@@ -17,7 +17,7 @@ const sum = (arr: Array<number | null | undefined>): number =>
     arr.reduce<number>((acc, v) => acc + (isFiniteNumber(v) ? v : 0), 0)
 
 export default function BottomNav(): JSX.Element {
-    const { userId } = useAuth() as any
+    const { userUuid } = useAuth() as any
     const { getUnread, getUnreadByRoom } = useNotifications() as any
 
     const [unreadTotal, setUnreadTotal] = useState(0)
@@ -111,7 +111,7 @@ export default function BottomNav(): JSX.Element {
 
     // 메인 이펙트
     useEffect(() => {
-        if (!userId) return
+        if (!userUuid) return
         let coreUnsubs: Array<() => void> = []
         let pollId: number | null = null
 
@@ -122,7 +122,7 @@ export default function BottomNav(): JSX.Element {
         })()
 
         // 사용자/개인 큐 이벤트 → 즉시 합산
-        coreUnsubs.push(ws.subscribe(`/topic/messages/${userId}`, () => { recalcNow(); bumpCrossTab() }))
+        coreUnsubs.push(ws.subscribe(`/topic/messages/${userUuid}`, () => { recalcNow(); bumpCrossTab() }))
         coreUnsubs.push(ws.subscribe(`/user/queue/messages`, () => { recalcNow(); bumpCrossTab() }))
 
         // 읽음/상태 변경 신호가 따로 있으면 포함
@@ -136,7 +136,7 @@ export default function BottomNav(): JSX.Element {
             await recalcNow()
             bumpCrossTab()
         }
-        coreUnsubs.push(ws.subscribe(`/topic/rooms/${userId}`, onRoomsChanged))
+        coreUnsubs.push(ws.subscribe(`/topic/rooms/${userUuid}`, onRoomsChanged))
         coreUnsubs.push(ws.subscribe(`/user/queue/rooms`, onRoomsChanged))
 
         // 재연결 시에도 동일 절차
@@ -182,7 +182,7 @@ export default function BottomNav(): JSX.Element {
             stopPoll()
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [userId, recalcNow, resubscribeRoomTopics, syncRooms, bumpCrossTab])
+    }, [userUuid, recalcNow, resubscribeRoomTopics, syncRooms, bumpCrossTab])
 
     return (
         <nav className="bottomnav">
@@ -210,7 +210,7 @@ export default function BottomNav(): JSX.Element {
 
             <button className="bottomnav__item bottomnav__button" title="알림">
         <span className="bottomnav__icon">
-          <NotificationsBell userId={userId} />
+          <NotificationsBell userId={userUuid} />
         </span>
                 <span className="bottomnav__label">알림</span>
             </button>
