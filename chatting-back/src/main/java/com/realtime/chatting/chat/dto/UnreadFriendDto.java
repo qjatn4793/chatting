@@ -1,3 +1,5 @@
 package com.realtime.chatting.chat.dto;
 
-public record UnreadFriendDto(String friendUsername, int count) {}
+import java.util.UUID;
+
+public record UnreadFriendDto(UUID peerId, int count) {}
