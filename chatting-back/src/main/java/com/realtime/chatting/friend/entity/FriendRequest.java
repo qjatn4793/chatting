@@ -15,8 +15,10 @@ import java.time.Instant;
         @UniqueConstraint(name = "uk_request_once", columnNames = {"requester_id","receiver_id","status"})
     }
 )
-@Getter @Setter
-@NoArgsConstructor @AllArgsConstructor
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
 @Builder
 public class FriendRequest {
 

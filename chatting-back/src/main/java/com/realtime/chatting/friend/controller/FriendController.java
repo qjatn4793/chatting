@@ -2,6 +2,7 @@ package com.realtime.chatting.friend.controller;
 
 import com.realtime.chatting.friend.dto.FriendBriefDto;
 import com.realtime.chatting.friend.dto.FriendRequestDto;
+import com.realtime.chatting.friend.dto.SendFriendRequest;
 import com.realtime.chatting.friend.service.FriendService;
 import com.realtime.chatting.login.entity.User;
 import com.realtime.chatting.login.repository.UserRepository;
@@ -37,41 +38,39 @@ public class FriendController {
         return friendService.sendRequestFlexible(myId, body.identifier());
     }
 
-    // 기존 UUID 버전/이메일 버전 엔드포인트를 남겨두고 싶으면 그대로 유지해도 OK
-
-    /* ======= 나머지 기존 요청/수락/거절/취소 ======= */
-
+    /* ======= 요청 들어옴 ======= */
     @GetMapping("/requests/incoming")
     public List<FriendRequestDto> incoming(Authentication auth) {
         UUID myId = UUID.fromString(auth.getName());
         return friendService.incomingPendingByUserId(myId);
     }
 
+    /* ======= 요청 나감 ======= */
     @GetMapping("/requests/outgoing")
     public List<FriendRequestDto> outgoing(Authentication auth) {
         UUID myId = UUID.fromString(auth.getName());
         return friendService.outgoingPendingByUserId(myId);
     }
 
+    /* ======= 수락 ======= */
     @PostMapping("/requests/{id}/accept")
     public FriendRequestDto accept(@PathVariable("id") Long id, Authentication auth) {
         UUID myId = UUID.fromString(auth.getName());
         return friendService.acceptByUserId(id, myId);
     }
 
+    /* ======= 거절 ======= */
     @PostMapping("/requests/{id}/decline")
     public FriendRequestDto decline(@PathVariable("id") Long id, Authentication auth) {
         UUID myId = UUID.fromString(auth.getName());
         return friendService.declineByUserId(id, myId);
     }
 
+    /* ======= 취소 ======= */
     @DeleteMapping("/requests/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void cancel(@PathVariable("id") Long id, Authentication auth) {
         UUID myId = UUID.fromString(auth.getName());
         friendService.cancelByUserId(id, myId);
     }
-
-    /** 요청 바디용 DTO (record로 간단히) */
-    public record SendFriendRequest(String identifier) {}
 }
