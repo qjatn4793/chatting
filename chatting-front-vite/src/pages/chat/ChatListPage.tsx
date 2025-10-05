@@ -202,9 +202,6 @@ export default function ChatListPage(): JSX.Element {
 
                             const peer = pickDmPeerFromMsgs(msgs, meKey)
 
-                            console.log(msgs);
-                            console.log(peer);
-
                             return {
                                 ...room,
                                 dmPeerName: peer.name || room.dmPeerName,

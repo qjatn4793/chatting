@@ -84,9 +84,6 @@ export default function FriendsPage(): JSX.Element {
             // ✅ 이제 백엔드는 [{id,name,email}] 형태를 반환 (레거시 string[]도 허용)
             const res = await http.get<FriendBriefDto[]>('/friends')
             const arr = Array.isArray(res.data) ? res.data : []
-
-            console.log(arr);
-
             const normalized = arr
                 .map(normalizeFriend)
                 .filter(Boolean) as FriendCard[]
@@ -202,20 +199,49 @@ export default function FriendsPage(): JSX.Element {
     /* 친구 관련 토픽 실시간 갱신 */
     useEffect(() => {
         if (!userUuid) return
-        const unsubs: Array<() => void> = []
+        const uid = String(userUuid)
+        let unsubs: Array<() => void> = []
+        let pollId: number | null = null
 
-        unsubs.push(ws.subscribe(`/topic/friend-requests/${userUuid}`, () => load()))
-        unsubs.push(ws.subscribe(`/topic/friends/${userUuid}`, () => load()))
-        unsubs.push(ws.subscribe(`/user/queue/friends`, () => load()))
-        const onWsConnect = () => load()
+        const onEvent = () => load()
+
+        const subscribeAll = () => {
+            const dests = [
+                `/topic/friend-requests/${uid}`, // 토픽(식별자 일치 시)
+                `/topic/friends/${uid}`,        // 토픽(식별자 일치 시)
+            ]
+            dests.forEach(d => {
+                try { unsubs.push(ws.subscribe(d, onEvent)) } catch {}
+            })
+        }
+
+        const onWsConnect = () => { subscribeAll(); load() }
+
         ws.onConnect(onWsConnect)
         ws.ensureConnected()
+        subscribeAll()
+
+        // 포커스/가시성/온라인 복귀 시 안전 재조회
+        const onVisible = () => { if (document.visibilityState === 'visible') load() }
+        const onFocus = () => load()
+        const onOnline = () => load()
+        document.addEventListener('visibilitychange', onVisible)
+        window.addEventListener('focus', onFocus)
+        window.addEventListener('online', onOnline)
+
+        // (옵션) 누락 보정용 짧은 폴링
+        pollId = window.setInterval(() => {
+            if (document.visibilityState === 'visible') load()
+        }, 5000) as unknown as number
+
         return () => {
             unsubs.forEach(u => { try { u() } catch {} })
+            unsubs = []
             try { ws.offConnect(onWsConnect) } catch {}
-            if (pollTimerRef.current) {
-                try { clearTimeout(pollTimerRef.current as unknown as number) } catch {}
-            }
+            document.removeEventListener('visibilitychange', onVisible)
+            window.removeEventListener('focus', onFocus)
+            window.removeEventListener('online', onOnline)
+            if (pollId) clearInterval(pollId)
         }
     }, [userUuid])
 

@@ -33,20 +33,64 @@ export default function RequestsPanel(): JSX.Element {
             ])
             setIncoming(inc.data ?? [])
             setOutgoing(out.data ?? [])
+            setErr('')
         } catch (e: any) {
             setErr(e?.response?.data?.message || '요청 목록을 불러오지 못했습니다.')
         }
     }
 
-    useEffect(() => { load() }, [])
+    // 최초 로드 + 다른 패널로의 힌트 브로드캐스트 유지
+    useEffect(() => {
+        load()
+        try { window.dispatchEvent(new CustomEvent('friends:maybe-changed')) } catch {}
+    }, [])
 
-    // 실시간 구독(요청 생성/거절/취소/수락 등)
+    // ✅ 실시간 구독(다중 경로) + 재연결 복구 + 포커스/가시성/온라인 복귀 + (옵션) 가벼운 폴링
     useEffect(() => {
         if (!userUuid) return
-        const unsub = ws.subscribe(`/topic/friend-requests/${userUuid}`, () => {
-            load()
-        })
-        return () => unsub()
+        const uid = String(userUuid)
+        let unsubs: Array<() => void> = []
+        let pollId: number | null = null
+
+        const onEvent = () => load()
+
+        const subscribeAll = () => {
+            const dests = [
+                `/topic/friend-requests/${uid}`,
+                `/topic/friends/${uid}`
+            ]
+            dests.forEach((d) => {
+                try { unsubs.push(ws.subscribe(d, onEvent)) } catch {}
+            })
+        }
+
+        const onConnect = () => { subscribeAll(); load() }
+
+        ws.onConnect(onConnect)
+        ws.ensureConnected()
+        subscribeAll()
+
+        const onVisible = () => { if (document.visibilityState === 'visible') load() }
+        const onFocus = () => load()
+        const onOnline = () => load()
+        document.addEventListener('visibilitychange', onVisible)
+        window.addEventListener('focus', onFocus)
+        window.addEventListener('online', onOnline)
+
+        // (옵션) 이벤트 누락 보정: 보이는 동안 5초마다 동기화
+        pollId = window.setInterval(() => {
+            if (document.visibilityState === 'visible') load()
+        }, 5000) as unknown as number
+
+        return () => {
+            unsubs.forEach((u) => { try { u() } catch {} })
+            unsubs = []
+            try { ws.offConnect(onConnect) } catch {}
+            document.removeEventListener('visibilitychange', onVisible)
+            window.removeEventListener('focus', onFocus)
+            window.removeEventListener('online', onOnline)
+            if (pollId) clearInterval(pollId)
+        }
     }, [userUuid])
 
     const getSender = (r: Req) =>
@@ -55,9 +99,9 @@ export default function RequestsPanel(): JSX.Element {
         r.receiver || r.to || r.toUser || r.receiverUsername || r.targetUsername || ''
 
     const notifyFriendsMaybeChanged = () => {
-        // ✅ 수락/거절/취소 직후, 전역으로 친구목록 동기화 힌트 브로드캐스트
         try {
             window.dispatchEvent(new CustomEvent('friends:maybe-changed'))
+            load().then()
         } catch {}
     }
 

@@ -8,6 +8,7 @@ import com.realtime.chatting.friend.repository.FriendRequestRepository;
 import com.realtime.chatting.login.entity.User;
 import com.realtime.chatting.login.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
@@ -21,6 +22,7 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class FriendService {
 
     private final FriendRequestRepository requestRepo;
@@ -187,8 +189,8 @@ public class FriendService {
         FriendRequestDto dto = toDto(saved);
 
         // 이메일 기준 토픽
-        messaging.convertAndSend("/topic/friend-requests/" + meU.getEmail(), dto);
-        messaging.convertAndSend("/topic/friend-requests/" + tgU.getEmail(), dto);
+        messaging.convertAndSend("/topic/friend-requests/" + meU.getId(), dto);
+        messaging.convertAndSend("/topic/friend-requests/" + tgU.getId(), dto);
         return dto;
     }
 
@@ -198,9 +200,12 @@ public class FriendService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "요청이 없거나 권한이 없습니다."));
         fr.setStatus(FriendRequestStatus.ACCEPTED);
 
+//        log.info("requester : {}", fr.getRequester().getId());
+//        log.info("receiver : {}", fr.getReceiver().getId());
+
         FriendRequestDto dto = toDto(fr);
-        messaging.convertAndSend("/topic/friend-requests/" + fr.getRequester().getEmail(), dto);
-        messaging.convertAndSend("/topic/friend-requests/" + fr.getReceiver().getEmail(), dto);
+        messaging.convertAndSend("/topic/friend-requests/" + fr.getRequester().getId(), dto);
+        messaging.convertAndSend("/topic/friend-requests/" + fr.getReceiver().getId(), dto);
         return dto;
     }
 
@@ -212,8 +217,8 @@ public class FriendService {
         FriendRequestDto dto = toDto(fr);
         requestRepo.delete(fr);
 
-        messaging.convertAndSend("/topic/friend-requests/" + fr.getRequester().getEmail(), dto);
-        messaging.convertAndSend("/topic/friend-requests/" + fr.getReceiver().getEmail(), dto);
+        messaging.convertAndSend("/topic/friend-requests/" + fr.getRequester().getId(), dto);
+        messaging.convertAndSend("/topic/friend-requests/" + fr.getReceiver().getId(), dto);
         return dto;
     }
 
@@ -230,8 +235,8 @@ public class FriendService {
         }
 
         requestRepo.delete(fr);
-        messaging.convertAndSend("/topic/friend-requests/" + fr.getRequester().getEmail(), "CANCELLED");
-        messaging.convertAndSend("/topic/friend-requests/" + fr.getReceiver().getEmail(), "CANCELLED");
+        // messaging.convertAndSend("/topic/friend-requests/" + fr.getRequester().getId(), "CANCELLED");
+        // messaging.convertAndSend("/topic/friend-requests/" + fr.getReceiver().getId(), "CANCELLED");
     }
 
     @Transactional(readOnly = true)

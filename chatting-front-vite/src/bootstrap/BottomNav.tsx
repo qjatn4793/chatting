@@ -125,10 +125,6 @@ export default function BottomNav(): JSX.Element {
         coreUnsubs.push(ws.subscribe(`/topic/messages/${userUuid}`, () => { recalcNow(); bumpCrossTab() }))
         coreUnsubs.push(ws.subscribe(`/user/queue/messages`, () => { recalcNow(); bumpCrossTab() }))
 
-        // 읽음/상태 변경 신호가 따로 있으면 포함
-        try { coreUnsubs.push(ws.subscribe(`/user/queue/read-receipts`, () => { recalcNow(); bumpCrossTab() })) } catch {}
-        try { coreUnsubs.push(ws.subscribe(`/user/queue/friends`, () => { recalcNow(); bumpCrossTab() })) } catch {}
-
         // 방 변경 → 동기화 → 방별 재구독 → 즉시 합산
         const onRoomsChanged = async () => {
             await syncRooms()
@@ -209,10 +205,10 @@ export default function BottomNav(): JSX.Element {
             </NavLink>
 
             <button className="bottomnav__item bottomnav__button" title="알림">
-        <span className="bottomnav__icon">
-          <NotificationsBell userId={userUuid} />
-        </span>
-                <span className="bottomnav__label">알림</span>
+              <span className="bottomnav__icon">
+                <NotificationsBell userUuid={userUuid}/>
+              </span>
+              <span className="bottomnav__label">알림</span>
             </button>
         </nav>
     )
