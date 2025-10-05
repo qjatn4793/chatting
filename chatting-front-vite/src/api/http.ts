@@ -15,16 +15,17 @@ const REFRESH_KEY = 'refresh_jwt'
 /** 동시 만료에 대한 refresh de-dup을 위한 락 */
 let refreshPromise: Promise<string | null> | null = null
 
+/** /auth 경로 여부 */
+const isAuthPath = (url?: string) => !!url && /(^|\/)auth(\/|$)/.test(url)
+
 /** refresh 호출 */
 async function refreshAccessToken(): Promise<string | null> {
-    // 이미 진행 중이면 그걸 기다림
     if (refreshPromise) return refreshPromise
 
     const refreshToken = localStorage.getItem(REFRESH_KEY)
     if (!refreshToken) return null
 
-    // 같은 axios 인스턴스를 쓰면 인터셉터가 다시 타서 루프가 생길 수 있어
-    // refresh 전용 임시 인스턴스를 사용
+    // refresh 전용 임시 인스턴스(인터셉터 비적용)
     const refreshClient = axios.create({
         baseURL: API_BASE_URL,
         withCredentials: false,
@@ -33,12 +34,8 @@ async function refreshAccessToken(): Promise<string | null> {
 
     refreshPromise = (async () => {
         try {
-            // 백엔드 계약:
-            //  - POST /auth/refresh
-            //  - body: { refreshToken }
-            //  - response: { accessToken, refreshToken? } (refresh 회전 시 새 refresh 도착 가능)
+            // 계약: POST /auth/refresh { refreshToken } → { accessToken, refreshToken? }
             const { data } = await refreshClient.post('/auth/refresh', { refreshToken })
-
             const newAccess  = (data as any)?.accessToken ?? (data as any)?.token ?? null
             const newRefresh = (data as any)?.refreshToken ?? null
 
@@ -52,7 +49,6 @@ async function refreshAccessToken(): Promise<string | null> {
         } catch {
             return null
         } finally {
-            // 다음 만료 이벤트를 위해 락 해제
             refreshPromise = null
         }
     })()
@@ -66,14 +62,12 @@ async function retryWithNewAccess(originalConfig: AxiosRequestConfig, newAccess:
         ...originalConfig,
         headers: { ...(originalConfig.headers as any), Authorization: `Bearer ${newAccess}` },
     }
-    return axios.request(cloned)
+    // 동일 인스턴스 사용: baseURL/기본 설정 유지
+    return http.request(cloned)
 }
 
 const http = axios.create({
     baseURL: API_BASE_URL,
-    // GET에 Content-Type을 강제로 넣으면 일부 서버/프록시에서 싫어하는 경우가 있어 공통 헤더는 비워두고,
-    // 메서드별로 필요 시 세팅
-    // headers: { },
 })
 
 /** 요청 인터셉터: Bearer 자동 부착 + 메서드별 Content-Type 지정 */
@@ -81,6 +75,8 @@ http.interceptors.request.use((config: InternalAxiosRequestConfig) => {
     const token = localStorage.getItem(ACCESS_KEY)
     const anyHeaders = (config.headers ?? {}) as any
 
+    // /auth/** 요청에도 Authorization을 보내도 문제는 없지만, 원하시면 아래 if로 제외 가능:
+    // if (!isAuthPath(config.url)) { ... }
     if (token) {
         if (typeof anyHeaders.set === 'function') {
             anyHeaders.set('Authorization', `Bearer ${token}`)
@@ -89,7 +85,6 @@ http.interceptors.request.use((config: InternalAxiosRequestConfig) => {
         }
     }
 
-    // POST/PUT/PATCH일 때만 Content-Type 지정
     const method = (config.method || 'get').toLowerCase()
     if (['post', 'put', 'patch'].includes(method)) {
         if (typeof anyHeaders.set === 'function') {
@@ -99,7 +94,6 @@ http.interceptors.request.use((config: InternalAxiosRequestConfig) => {
         }
     }
 
-    // 일부 보안/프록시 친화용 헤더(옵션)
     if (typeof anyHeaders.set === 'function') {
         anyHeaders.set('X-Requested-With', 'XMLHttpRequest')
     } else {
@@ -130,38 +124,42 @@ function isAuthOrExpired(error: AxiosError<any>): boolean {
 http.interceptors.response.use(
     (res) => res,
     async (error: AxiosError<any>) => {
-        // 네트워크 오류 등 response 자체가 없는 경우는 그대로 throw
         if (!error.response || !error.config) {
             return Promise.reject(error)
         }
 
-        // 이미 refresh 재시도 후 실패한 요청을 또 돌지 않게 플래그
         const cfg = error.config as AxiosRequestConfig & { _retryByRefresh?: boolean }
+        const skipByHeader = (cfg.headers as any)?.['X-Skip-Auth'] === '1'
+        const skipByPath   = isAuthPath(cfg.url)
 
+        // 1) /auth/** 요청 또는 Skip 지시가 있으면 refresh/로그아웃 스킵 → 즉시 reject
+        if (skipByHeader || skipByPath) {
+            return Promise.reject(error)
+        }
+
+        // 2) 인증/만료 관련 응답이면 refresh 시도
         if (isAuthOrExpired(error) && !cfg._retryByRefresh) {
-            // refresh 시도
             const newAccess = await refreshAccessToken()
             if (newAccess) {
                 cfg._retryByRefresh = true
                 try {
                     const res = await retryWithNewAccess(cfg, newAccess)
                     return res
-                } catch (e) {
-                    // 재시도 실패 → 아래로 떨어져 로그아웃 처리
+                } catch {
+                    // fallthrough
                 }
             }
 
-            // refresh 실패 or 재시도 실패 → 글로벌 로그아웃 이벤트
+            // refresh 실패 또는 재시도 실패 → 토큰 제거 + 로그아웃 이벤트
             try { localStorage.removeItem(ACCESS_KEY) } catch {}
-            // refresh 토큰도 더 이상 유효하지 않을 가능성이 크므로 제거
             try { localStorage.removeItem(REFRESH_KEY) } catch {}
-
             window.dispatchEvent(new CustomEvent('auth:logout', { detail: { reason: 'session' } }))
-            // 체인 중단 (이후 화면에서 리다이렉트/컨텍스트 정리)
-            return new Promise<never>(() => {})
+
+            // 이전엔 Promise.pending으로 두어 UI가 멈췄음 → 이제는 reject 해서 호출 측에서 처리/로딩 해제 가능
+            return Promise.reject(error)
         }
 
-        // 기타 에러는 그대로 throw
+        // 3) 기타 에러는 그대로 throw
         return Promise.reject(error)
     }
 )

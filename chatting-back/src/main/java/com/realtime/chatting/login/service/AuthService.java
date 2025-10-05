@@ -38,13 +38,16 @@ public class AuthService {
         String email = normalizer.normalizeEmail(req.email());
         String phone = normalizer.normalizePhone(req.phoneNumber());
 
-        if ((email == null || email.isBlank()) && (phone == null || phone.isBlank())) {
-            throw new IllegalArgumentException("이메일 또는 휴대폰 번호 중 하나는 필수입니다.");
+        if (phone == null || phone.isBlank()) {
+            throw new IllegalArgumentException("휴대폰 번호는 필수입니다.");
         }
-        if (email != null && userRepository.existsByEmail(email)) {
+        if ((email == null || email.isBlank())) {
+            throw new IllegalArgumentException("이메일은 필수입니다.");
+        }
+        if (userRepository.existsByEmail(email)) {
             throw new IllegalArgumentException("이미 사용 중인 이메일입니다.");
         }
-        if (phone != null && userRepository.existsByPhoneNumber(phone)) {
+        if (userRepository.existsByPhoneNumber(phone)) {
             throw new IllegalArgumentException("이미 사용 중인 휴대폰 번호입니다.");
         }
 
@@ -85,7 +88,7 @@ public class AuthService {
     // ============================ 로그인 영역 =======================================
     public LoginResponse login(LoginRequest req) {
         User user = findForLogin(req)
-                .orElseThrow(() -> new IllegalArgumentException("계정을 찾을 수 없습니다."));
+                .orElseThrow(() -> new IllegalArgumentException("아이디(이메일/휴대폰) 또는 비밀번호가 올바르지 않습니다."));
 
         if (!passwordEncoder.matches(req.password(), user.getPassword())) {
             // 필요하면 지연/락아웃 정책 추가
