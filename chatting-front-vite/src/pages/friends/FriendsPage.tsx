@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+// src/pages/friends/FriendsPage.tsx
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import http from '@/api/http'
 import '@/styles/friends.css'
@@ -6,18 +7,32 @@ import { useAuth } from '@/context/AuthContext'
 import { useNotifications } from '@/hooks/useNotifications'
 import { ws } from '@/ws'
 
-/* ========== 유틸 ========== */
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-const isEmail = (s?: string) => !!(s && EMAIL_RE.test(s || ''))
+/* ────────────────────────────────────────────────────────────
+ * 1) 타입 정의 (백엔드 DTO와 일치)
+ * ──────────────────────────────────────────────────────────── */
+export type FriendBriefDto = {
+    id?: string | null        // UUID 문자열(선택)
+    name?: string | null      // 화면 표기용 이름
+    email?: string | null     // 식별용 이메일
+}
 
-function toStr(x: unknown): string | undefined {
+type FriendCard = {
+    id: string                // 내부 식별자(없으면 email로 대체)
+    name?: string
+    email?: string
+}
+
+/* ────────────────────────────────────────────────────────────
+ * 2) 순수 유틸
+ * ──────────────────────────────────────────────────────────── */
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const toStr = (x: unknown): string | undefined => {
     if (x == null) return undefined
     const s = String(x).trim()
     return s || undefined
 }
-
-/** “이름(이메일)” 규칙 포맷 */
-function formatNameEmail(name?: string, email?: string): string {
+const isEmail = (s?: string) => !!(s && EMAIL_RE.test(s))
+const formatNameEmail = (name?: string, email?: string): string => {
     const n = toStr(name)
     const e = toStr(email)
     if (n && e) return `${n} (${e})`
@@ -25,242 +40,283 @@ function formatNameEmail(name?: string, email?: string): string {
     if (e) return e
     return '알 수 없음'
 }
+const errMsg = (e: any, fallback: string) =>
+    e?.response?.data?.message || e?.message || fallback
 
-/* ========== 타입 ========== */
-type FriendBriefDto =
-    | string
-    | {
-    id?: string
-    name?: string
-    email?: string
+/* ────────────────────────────────────────────────────────────
+ * 3) API 래퍼 (/api 프리픽스 없음)
+ *   - in-flight 취소를 위해 AbortSignal 지원
+ *   - (옵션) ETag 캐싱으로 304 수용
+ * ──────────────────────────────────────────────────────────── */
+const etagCache: { friends?: string } = {}
+
+const FriendsAPI = {
+    list: (opts?: { signal?: AbortSignal }) =>
+        http.get<FriendBriefDto[]>('/friends', {
+            signal: opts?.signal,
+            // 서버가 ETag를 지원한다면 304로 네트워크 절감
+            headers: etagCache.friends ? { 'If-None-Match': etagCache.friends } : undefined,
+            validateStatus: (s) => s === 200 || s === 304,
+        }).then((res) => {
+            const etag = res.headers?.etag || res.headers?.ETag
+            if (etag) etagCache.friends = etag
+            return res
+        }),
+    sendRequest: (identifier: string) => http.post('/friends/requests', { identifier }),
+    incoming: () => http.get('/friends/requests/incoming'),
+    outgoing: () => http.get('/friends/requests/outgoing'),
 }
 
-type FriendCard = {
-    id: string            // 내부 식별자(없으면 email로 대체)
-    name?: string
-    email?: string
+const RoomsAPI = {
+    openDmByIdentifier: (identifier: string) =>
+        http.post<{ id: string }>('/rooms/dm/by-identifier', { identifier }),
+    markRead: (roomId: string) =>
+        http.post(`/rooms/${encodeURIComponent(roomId)}/read`),
 }
 
-/* ========== 컴포넌트 ========== */
+/* ────────────────────────────────────────────────────────────
+ * 4) FriendsPage
+ * ──────────────────────────────────────────────────────────── */
 export default function FriendsPage(): JSX.Element {
+    // 상태
     const [friends, setFriends] = useState<FriendCard[]>([])
-    const [identifierToAdd, setIdentifierToAdd] = useState('')
-    const [error, setError] = useState('')
+    const [identifier, setIdentifier] = useState('')
     const [sending, setSending] = useState(false)
-    const [opening, setOpening] = useState('')
+    const [openingKey, setOpeningKey] = useState<string>('') // DM 열기 진행 표시
+    const [error, setError] = useState<string>('')
 
     const nav = useNavigate()
     const { userUuid, logout } = useAuth() as any
-
     const { clearFriend, setActiveRoom } = useNotifications() as any
-    const pollTimerRef = useRef<number | null>(null)
 
-    /** 서버 응답(FriendBriefDto)을 FriendCard로 정규화 */
-    const normalizeFriend = (raw: FriendBriefDto): FriendCard | null => {
-        if (typeof raw === 'string') {
-            const v = raw.trim()
-            if (!v) return null
-            if (isEmail(v)) return { id: v, email: v }
-            return { id: v, name: v }
-        }
-        const id = toStr(raw?.id) || toStr(raw?.email) // id가 없으면 email을 id로 대체
+    /* ──────────────────────────────────────────────────────────
+     * 호출 줄이기 핵심: 진행중 중복 방지 + 이벤트 합치기
+     * ────────────────────────────────────────────────────────── */
+    const REFRESH_MIN_GAP = 800 // ms: 여러 신호가 와도 0.8초에 1회만 실제 호출
+    const nextTickRef = useRef<number | null>(null)
+    const lastRunRef = useRef(0)
+    const loadingRef = useRef(false)
+    const abortRef = useRef<AbortController | null>(null)
+
+    // 정규화
+    const normalize = useCallback((raw: FriendBriefDto): FriendCard | null => {
+        const id = toStr(raw?.id)
         const name = toStr(raw?.name)
         const email = toStr(raw?.email)
-        if (!id && !email && !name) return null
-        return { id: id || email || (name as string), name, email }
-    }
+        const key = id || email
+        if (!key && !name) return null
+        return { id: key || String(name), name, email }
+    }, [])
 
-    /** friends 배열에 중복 없이 하나 추가 */
-    const ensureUniquePush = (f: FriendCard) => {
-        setFriends(prev => {
-            if (prev.some(x => x.id === f.id)) return prev
-            return [f, ...prev]
-        })
-    }
+    const setList = useCallback((arr: FriendBriefDto[]) => {
+        const converted = (arr || [])
+            .map(normalize)
+            .filter(Boolean) as FriendCard[]
+        setFriends(converted)
+    }, [normalize])
 
-    /** /friends 로드 */
-    const load = async () => {
+    const ensurePrependUnique = useCallback((card: FriendCard) => {
+        setFriends(prev => (prev.some(x => x.id === card.id) ? prev : [card, ...prev]))
+    }, [])
+
+    /** 실제 GET /friends 1회 수행 (중복요청/취소 처리) */
+    const doFetchOnce = useCallback(async () => {
+        if (loadingRef.current) return // 이미 진행 중이면 스킵
+        loadingRef.current = true
+
+        // 이전 요청 취소
+        if (abortRef.current) abortRef.current.abort()
+        const ctrl = new AbortController()
+        abortRef.current = ctrl
+
         try {
-            // ✅ 이제 백엔드는 [{id,name,email}] 형태를 반환 (레거시 string[]도 허용)
-            const res = await http.get<FriendBriefDto[]>('/friends')
-            const arr = Array.isArray(res.data) ? res.data : []
-            const normalized = arr
-                .map(normalizeFriend)
-                .filter(Boolean) as FriendCard[]
-            setFriends(normalized)
-        } catch (e: any) {
-            const status = e?.response?.status
-            if ([401, 403, 419, 440].includes(status)) {
-                logout?.('세션이 만료되었거나 다른 기기에서 로그인되어 로그아웃됩니다.')
-                return
+            const res = await FriendsAPI.list({ signal: ctrl.signal })
+            if (res.status === 304) {
+                // 변경 없음 → 아무 것도 하지 않음
+            } else {
+                setList(Array.isArray(res.data) ? res.data : [])
             }
-            setError(e?.response?.data?.message || '목록을 불러오지 못했습니다.')
+            lastRunRef.current = Date.now()
+        } catch (e: any) {
+            // axios 취소는 name/message 다양 → 최대한 조용히 스킵
+            const canceled = e?.name === 'CanceledError' || e?.code === 'ERR_CANCELED' || e?.message === 'canceled'
+            if (!canceled) {
+                const st = e?.response?.status
+                if ([401, 403, 419, 440].includes(st)) {
+                    logout?.('세션이 만료되었거나 다른 기기에서 로그인되어 로그아웃됩니다.')
+                } else {
+                    setError(errMsg(e, '친구 목록을 불러오지 못했습니다.'))
+                }
+            }
+        } finally {
+            loadingRef.current = false
         }
-    }
+    }, [logout, setList])
 
-    const startShortConvergencePoll = () => {
-        const delays = [0, 400, 1200]
-        delays.forEach(ms => {
-            const t = window.setTimeout(() => load(), ms)
-            pollTimerRef.current = t as unknown as number
-        })
-    }
+    /** 여러 이벤트를 1회 호출로 합치는 invalidate */
+    const invalidate = useCallback(() => {
+        const now = Date.now()
+        const gap = now - lastRunRef.current
+        const delay = gap >= REFRESH_MIN_GAP ? 0 : (REFRESH_MIN_GAP - gap)
 
-    /** 친구 요청 보내기 */
-    const addFriend = async () => {
-        const identifier = identifierToAdd.trim()
-        if (!identifier) {
+        if (nextTickRef.current) window.clearTimeout(nextTickRef.current)
+        nextTickRef.current = window.setTimeout(() => {
+            doFetchOnce()
+            nextTickRef.current = null
+        }, delay) as unknown as number
+    }, [doFetchOnce])
+
+    /* 초기 1회 */
+    useEffect(() => { invalidate() }, [invalidate])
+
+    /* 친구 요청 보내기 */
+    const onSend = useCallback(async () => {
+        const idf = identifier.trim()
+        if (!idf) {
             setError('이메일/휴대폰/이름 중 하나를 입력하세요.')
             return
         }
         setError('')
         setSending(true)
         try {
-            await http.post('/friends/requests', { identifier })
-            setIdentifierToAdd('')
-            await load()
+            await FriendsAPI.sendRequest(idf)
+            setIdentifier('')
+            // 즉시 1회 갱신
+            invalidate()
+            // (옵션) WS 신뢰 낮은 환경이면 1.2초 후 한 번 더
+            window.setTimeout(() => invalidate(), 1200)
         } catch (e: any) {
-            const status = e?.response?.status
-            const msg = e?.response?.data?.message
-
-            if (status === 409) {
-                // 이미 친구이거나 요청이 존재
+            const st = e?.response?.status
+            const fallback = '친구 요청을 보내지 못했습니다.'
+            if (st === 409) {
                 try {
-                    const { data: incoming } = await http.get('/friends/requests/incoming')
+                    const { data: incoming } = await FriendsAPI.incoming()
                     const hasFromTarget =
                         Array.isArray(incoming) &&
                         incoming.some((r: any) =>
-                            [r.requester, r.requesterEmail, r.requesterId].some(
-                                (v) => String(v).toLowerCase() === identifier.toLowerCase()
-                            )
+                            [r.requester, r.requesterEmail, r.requesterId]
+                                .map(v => (v == null ? undefined : String(v).toLowerCase()))
+                                .includes(idf.toLowerCase()),
                         )
-
                     if (hasFromTarget) {
                         setError('상대가 이미 보낸 요청이 있어요. “받은 요청”에서 수락하세요.')
                     } else {
-                        const { data: fr } = await http.get('/friends')
-                        const list = Array.isArray(fr) ? fr : []
-                        const exists = list.some((it: any) => {
-                            if (typeof it === 'string') return it.toLowerCase() === identifier.toLowerCase()
-                            const id = toStr(it?.id)
-                            const email = toStr(it?.email)
-                            return (
-                                id?.toLowerCase() === identifier.toLowerCase() ||
-                                email?.toLowerCase() === identifier.toLowerCase()
-                            )
-                        })
-                        setError(exists ? '이미 친구예요.' : (msg || '이미 보냈거나 상대가 보낸 요청이 있어요.'))
+                        const listRes = await FriendsAPI.list()
+                        if (listRes.status !== 304) {
+                            const exists = (Array.isArray(listRes.data) ? listRes.data : []).some((it: any) => {
+                                const id = toStr(it?.id)?.toLowerCase()
+                                const em = toStr(it?.email)?.toLowerCase()
+                                return id === idf.toLowerCase() || em === idf.toLowerCase()
+                            })
+                            setError(exists ? '이미 친구예요.' : errMsg(e, fallback))
+                        } else {
+                            setError(errMsg(e, fallback))
+                        }
                     }
                 } catch {
-                    setError(msg || '이미 보냈거나 상대가 보낸 요청이 있어요.')
+                    setError(errMsg(e, fallback))
                 }
-            } else if (status === 404) {
+            } else if (st === 404) {
                 setError('해당 사용자를 찾을 수 없습니다.')
-            } else if (status === 400) {
-                setError(msg || '요청 형식이 올바르지 않습니다.')
-            } else if (status === 401 || status === 403) {
+            } else if (st === 400) {
+                setError(errMsg(e, '요청 형식이 올바르지 않습니다.'))
+            } else if (st === 401 || st === 403) {
                 setError('세션이 만료되었거나 권한이 없습니다. 다시 로그인해 주세요.')
                 window.dispatchEvent(new CustomEvent('auth:logout', { detail: { reason: 'session' } }))
             } else {
-                setError(msg || '친구 요청을 보내지 못했습니다.')
+                setError(errMsg(e, fallback))
             }
         } finally {
             setSending(false)
         }
-    }
+    }, [identifier, invalidate])
 
-    /** DM 열기: email 우선, 없으면 id 사용 */
-    const openDm = async (friendIdOrEmail: string) => {
-        const idf = friendIdOrEmail.trim()
-        if (!idf) return
-        setOpening(idf)
+    /* DM 열기 (email 우선, 없으면 id) */
+    const openDm = useCallback(async (friend: FriendCard) => {
+        const key = friend.email || friend.id
+        if (!key) return
+        setOpeningKey(key)
         try {
-            const identifier = idf // 서버가 식별자 flexible 매칭(이메일/UUID/유저명 등)을 지원한다고 가정
-            const res = await http.post<{ id: string }>('/rooms/dm/by-identifier', { identifier })
-            const room = res.data
+            const { data: room } = await RoomsAPI.openDmByIdentifier(key)
             if (!room?.id) throw new Error('room id missing')
-
-            await http.post(`/rooms/${encodeURIComponent(room.id)}/read`)
-            clearFriend?.(idf)
+            await RoomsAPI.markRead(room.id)
+            clearFriend?.(key)
             setActiveRoom?.(room.id)
             nav(`/chat/${encodeURIComponent(room.id)}`)
         } catch (e: any) {
-            setError(e?.response?.data?.message || 'DM 방을 열지 못했습니다.')
+            setError(errMsg(e, 'DM 방을 열지 못했습니다.'))
         } finally {
-            setOpening('')
+            setOpeningKey('')
         }
-    }
+    }, [clearFriend, setActiveRoom, nav])
 
-    /* 초기 로드 */
+    /* Cross-panel 브로드캐스트: 수락 등 */
     useEffect(() => {
-        load()
-    }, [])
+        const onCross = (e: Event) => {
+            const ce = e as CustomEvent<{ type?: string; friend?: FriendBriefDto }>
+            if (ce?.detail?.type === 'accepted' && ce.detail.friend) {
+                const card = normalize(ce.detail.friend)
+                if (card) ensurePrependUnique(card)
+            }
+            invalidate()
+        }
+        window.addEventListener('friends:maybe-changed', onCross as EventListener)
+        return () => window.removeEventListener('friends:maybe-changed', onCross as EventListener)
+    }, [ensurePrependUnique, normalize, invalidate])
 
-    /* 친구 관련 토픽 실시간 갱신 */
+    /* WS + 가시성/포커스/온라인: 모두 invalidate로 통일 */
     useEffect(() => {
         if (!userUuid) return
         const uid = String(userUuid)
-        let unsubs: Array<() => void> = []
-        let pollId: number | null = null
+        const unsubs: Array<() => void> = []
 
-        const onEvent = () => load()
+        const onEvent = () => invalidate()
 
-        const subscribeAll = () => {
-            const dests = [
-                `/topic/friend-requests/${uid}`, // 토픽(식별자 일치 시)
-                `/topic/friends/${uid}`,        // 토픽(식별자 일치 시)
-            ]
-            dests.forEach(d => {
-                try { unsubs.push(ws.subscribe(d, onEvent)) } catch {}
+        const subscribe = () => {
+            ;[
+                `/topic/friend-requests/${uid}`,
+                `/topic/friends/${uid}`,
+            ].forEach(dest => {
+                try {
+                    const off = ws.subscribe(dest, onEvent)
+                    unsubs.push(off)
+                } catch { /* noop */ }
             })
         }
 
-        const onWsConnect = () => { subscribeAll(); load() }
+        const onConn = () => {
+            subscribe()
+            invalidate()
+        }
 
-        ws.onConnect(onWsConnect)
+        ws.onConnect(onConn)
         ws.ensureConnected()
-        subscribeAll()
+        subscribe()
 
-        // 포커스/가시성/온라인 복귀 시 안전 재조회
-        const onVisible = () => { if (document.visibilityState === 'visible') load() }
-        const onFocus = () => load()
-        const onOnline = () => load()
+        const onVisible = () => { if (document.visibilityState === 'visible') invalidate() }
+        const onFocus = () => invalidate()
+        const onOnline = () => invalidate()
+
         document.addEventListener('visibilitychange', onVisible)
         window.addEventListener('focus', onFocus)
         window.addEventListener('online', onOnline)
 
-        // (옵션) 누락 보정용 짧은 폴링
-        pollId = window.setInterval(() => {
-            if (document.visibilityState === 'visible') load()
-        }, 5000) as unknown as number
+        // (권장: 폴링 제거) 필요 시 아주 길게
+        // const pollId = window.setInterval(() => {
+        //   if (document.visibilityState === 'visible') invalidate()
+        // }, 60000)
 
         return () => {
             unsubs.forEach(u => { try { u() } catch {} })
-            unsubs = []
-            try { ws.offConnect(onWsConnect) } catch {}
+            try { ws.offConnect(onConn) } catch {}
             document.removeEventListener('visibilitychange', onVisible)
             window.removeEventListener('focus', onFocus)
             window.removeEventListener('online', onOnline)
-            if (pollId) clearInterval(pollId)
+            // window.clearInterval(pollId)
         }
-    }, [userUuid])
+    }, [userUuid, invalidate])
 
-    /* 다른 패널에서의 상태 변화 브로드캐스트 수신 */
-    useEffect(() => {
-        const handler = (e: Event) => {
-            const ce = e as CustomEvent<{ type?: string; friend?: FriendBriefDto }>
-
-            if (ce?.detail?.type === 'accepted' && ce.detail.friend) {
-                const card = normalizeFriend(ce.detail.friend)
-                if (card) ensureUniquePush(card)
-            }
-            startShortConvergencePoll()
-        }
-        window.addEventListener('friends:maybe-changed', handler as EventListener)
-        return () => window.removeEventListener('friends:maybe-changed', handler as EventListener)
-    }, [])
-
-    /* 이름(이메일) 기준 정렬 */
+    /* 파생 값: 이름(이메일) 기준 정렬 */
     const sortedFriends = useMemo(() => {
         return [...friends].sort((a, b) => {
             const A = formatNameEmail(a.name, a.email).toLowerCase()
@@ -269,27 +325,33 @@ export default function FriendsPage(): JSX.Element {
         })
     }, [friends])
 
+    /* 렌더링 */
     return (
         <div className="friends">
             <h2>친구</h2>
+
             {error && <p className="error">{error}</p>}
 
             <div className="friends__add">
                 <input
-                    value={identifierToAdd}
-                    onChange={(e) => setIdentifierToAdd(e.target.value)}
+                    value={identifier}
+                    onChange={(e) => setIdentifier(e.target.value)}
                     placeholder="친구 식별자 (이메일/휴대폰/이름)"
                     inputMode="text"
                     autoComplete="off"
                 />
-                <button onClick={addFriend} disabled={sending || !identifierToAdd.trim()}>
+                <button
+                    className="btn"
+                    onClick={onSend}
+                    disabled={sending || !identifier.trim()}
+                    aria-disabled={sending || !identifier.trim()}
+                >
                     {sending ? '요청 중…' : '친구 요청 보내기'}
                 </button>
             </div>
 
             <ul className="friends__list">
                 {sortedFriends.map((f) => {
-                    // DM 열 때는 email을 최우선 식별자로 사용, 없으면 id로
                     const openKey = f.email || f.id
                     return (
                         <li key={f.id} className="friends__item">
@@ -298,8 +360,13 @@ export default function FriendsPage(): JSX.Element {
                                     <span className="friends__name">{formatNameEmail(f.name, f.email)}</span>
                                 </div>
                             </div>
-                            <button className="btn" onClick={() => openDm(openKey)} disabled={opening === openKey}>
-                                {opening === openKey ? '열기...' : '대화'}
+                            <button
+                                className="btn"
+                                onClick={() => openDm(f)}
+                                disabled={openingKey === openKey}
+                                aria-disabled={openingKey === openKey}
+                            >
+                                {openingKey === openKey ? '열기…' : '대화'}
                             </button>
                         </li>
                     )
