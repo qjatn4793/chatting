@@ -176,7 +176,7 @@ export default function AuthForm(): JSX.Element {
                             autoComplete="name"
                         />
                         <input
-                            placeholder="이메일(선택)"
+                            placeholder="이메일"
                             value={email}
                             onChange={(e) => setEmail(e.target.value)}
                             autoComplete="email"
