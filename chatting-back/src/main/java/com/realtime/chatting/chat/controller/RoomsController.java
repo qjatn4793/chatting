@@ -68,7 +68,7 @@ public class RoomsController {
         return messageService.history(roomId, capped);
     }
 
-    /** 메시지 전송: sender는 내 email로 기록(표시/알림키와 일치) */
+    /** 메시지 전송: sender는 내 UUID 문자열로 기록(미읽음/알림 키와 일치) */
     @PostMapping("/{roomId}/send")
     public MessageDto send(@PathVariable("roomId") String roomId,
                            @Valid @RequestBody SendMessageRequest req,
@@ -77,10 +77,10 @@ public class RoomsController {
         User me = userRepository.findById(myId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "me not found"));
 
-        // sender = 식별자(권장: UUID 문자열 또는 이메일)
+        // sender = UUID 문자열 (미읽음 집계/알림 라우팅과 일치)
+        String sender = me.getId().toString();
         // username = 화면 표기용 이름(닉네임)
-        String sender = me.getEmail();          // 또는 me.getEmail() 사용
-        String username = me.getUsername();              // NOT NULL 가정 (아래 서비스에서 가드도 넣음)
+        String username = me.getUsername();
         String messageId = UUID.randomUUID().toString();
 
         MessageDto saved = messageService.save(
@@ -88,7 +88,7 @@ public class RoomsController {
                 messageId,
                 username,
                 sender,
-                req.getMessage()                        // DTO가 message라면 OK (백엔드/프론트 키 통일 권장)
+                req.getMessage()
         );
 
         // RabbitMQ publish

@@ -20,12 +20,19 @@ public class MessageService {
     private final ChatMessageRepository messageRepo;
 
     public List<MessageDto> history(String roomId, int limit) {
-        return messageRepo.findByRoomIdOrderByCreatedAtDesc(roomId, PageRequest.of(0, limit)).stream()
-            .sorted((a,b) -> a.getCreatedAt().compareTo(b.getCreatedAt()))
-            .map(m -> MessageDto.builder()
-                .id(m.getId()).roomId(m.getRoomId()).messageId(UUID.fromString(m.getMessageId())).username(m.getUsername()).sender(m.getSender()).content(m.getContent()).createdAt(m.getCreatedAt())
-                .build())
-            .collect(Collectors.toList());
+        return messageRepo
+                .findByRoomIdOrderByCreatedAtDesc(roomId, PageRequest.of(0, limit))
+                .stream()
+                .map(m -> MessageDto.builder()
+                        .id(m.getId())
+                        .roomId(m.getRoomId())
+                        .messageId(UUID.fromString(m.getMessageId()))
+                        .username(m.getUsername())
+                        .sender(m.getSender())
+                        .content(m.getContent())
+                        .createdAt(m.getCreatedAt())
+                        .build())
+                .collect(Collectors.toList());
     }
 
     public MessageDto save(String roomId, String messageId, String username, String sender, String content) {

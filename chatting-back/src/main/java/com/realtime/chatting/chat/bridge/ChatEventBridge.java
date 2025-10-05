@@ -38,7 +38,7 @@ public class ChatEventBridge {
 
         // 2) 미읽음 +1 : sender는 UUID 문자열이어야 함
         UUID senderUuid = null;
-        String senderRaw = String.valueOf(message.getMessageId());
+        String senderRaw = message.getSender(); // ← sender에서 읽는다(이 값은 UUID 문자열이어야 함)
         if (senderRaw != null && !senderRaw.isBlank()) {
             try {
                 senderUuid = UUID.fromString(senderRaw);
@@ -49,7 +49,6 @@ public class ChatEventBridge {
         }
 
         // 3) 사용자별 알림 (구독 키 = UUID 문자열)
-        //    레포지토리도 UUID 리스트를 반환하도록 변경했으므로 그에 맞춰 처리
         List<UUID> participantIds = memberRepo.findParticipantIds(roomId);
 
         String preview = abbreviate(message.getContent(), 80);
