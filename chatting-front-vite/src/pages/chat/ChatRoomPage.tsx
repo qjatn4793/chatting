@@ -1,5 +1,5 @@
 // src/pages/chat/ChatRoomPage.tsx
-import React, { useEffect, useRef, useState, useMemo } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import http from '@/api/http'
 import '@/styles/chat.css'
@@ -7,23 +7,21 @@ import { useAuth } from '@/context/AuthContext'
 import { useNotifications } from '@/hooks/useNotifications'
 import { ws } from '@/ws'
 
-type RawMsg = {
-    id?: string            // DB PK
-    messageId?: string     // 논리적 메시지 ID
-    roomId?: string
-    sender?: string
-    username?: string
-
-    message?: string
-    text?: string
-    content?: string
-    body?: string
-    createdAt?: string | number
-    time?: string | number
+/* ────────────────────────────────────────────────────────────
+ * 1) 타입 (백엔드 DTO에 맞춤)
+ * ──────────────────────────────────────────────────────────── */
+type MessageDto = {
+    id?: number | null
+    messageId?: string | null      // UUID
+    roomId?: string | null
+    sender?: string | null         // UUID 문자열
+    username?: string | null
+    content?: string | null
+    createdAt?: string | number | null
 }
 
 type UiMsg = {
-    id: string                  // 화면/중복제거용: messageId > id > uuid
+    id: string                     // messageId(UUID) → id(Long) → fallback
     roomId?: string
     sender?: string
     username?: string
@@ -33,118 +31,98 @@ type UiMsg = {
 
 type RoomLite = {
     id: string
-    members?: Array<string> // 이메일 또는 UUID 문자열들
+    members?: string[] | null      // 이메일 또는 UUID 문자열
 }
 
-function toStr(x: unknown): string | undefined {
+/* ────────────────────────────────────────────────────────────
+ * 2) 순수 유틸
+ * ──────────────────────────────────────────────────────────── */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+const toStr = (x: unknown): string | undefined => {
     if (x === null || x === undefined) return undefined
     const s = String(x).trim()
     return s.length ? s : undefined
 }
+const isUuidLike = (s?: string) => !!s && UUID_RE.test(s)
+const isEmailLike = (s?: string) => !!s && EMAIL_RE.test(s)
 
-function normalize(raw: RawMsg): UiMsg {
-    const normId =
-        toStr(raw.messageId) ??
-        toStr(raw.id) ??
-        crypto.randomUUID()
-
-    const content =
-        toStr(raw.message) ??
-        toStr(raw.text) ??
-        toStr(raw.content) ??
-        toStr(raw.body) ??
-        ''
-
-    const createdAt = (raw.createdAt as any) ?? (raw.time as any) ?? null
-
-    return {
-        id: normId!,
-        roomId: toStr(raw.roomId),
-        sender: toStr(raw.sender),
-        username: toStr(raw.username),
-        content,
-        createdAt,
-    }
-}
-
-/** 식별자 형태 판별 */
-const UUID_RE =
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-
-function isUuidLike(s?: string) { return !!s && UUID_RE.test(s) }
-function isEmailLike(s?: string) { return !!s && EMAIL_RE.test(s) }
-
-/** UUID는 하이픈 제거 + 소문자, 그 외는 소문자 비교 */
-function eqId(a?: string, b?: string): boolean {
+const eqId = (a?: string, b?: string): boolean => {
     if (!a || !b) return false
     const A = a.trim()
     const B = b.trim()
     const aIsUuid = isUuidLike(A)
     const bIsUuid = isUuidLike(B)
     if (aIsUuid && bIsUuid) {
-        const na = A.toLowerCase().replace(/-/g, '')
-        const nb = B.toLowerCase().replace(/-/g, '')
-        return na === nb
+        return A.toLowerCase().replace(/-/g, '') === B.toLowerCase().replace(/-/g, '')
     }
-    // 이메일/기타는 소문자 비교
     return A.toLowerCase() === B.toLowerCase()
 }
 
-/** 나/상대 판정
- * - 내 후보키: userUuid, email (둘 다 비교)
- * - 메시지에서 비교대상: sender(1순위), username(보조: username에 이메일/UUID가 올 수 있는 환경 대비)
- * - 메시지 id는 사용자 식별과 무관 → 비교 제외
- */
-function sameUser(meKeys: (string | undefined | null)[], msg: UiMsg): boolean {
-    const candidates: (string | undefined)[] = [msg.sender, msg.username]
+const toMillis = (v: string | number | null | undefined): number => {
+    if (v == null) return -Infinity
+    const n = Number(v)
+    if (!Number.isNaN(n)) return n
+    const t = Date.parse(String(v))
+    return Number.isNaN(t) ? -Infinity : t
+}
+
+/* ────────────────────────────────────────────────────────────
+ * 3) 메시지 정규화/라벨
+ * ──────────────────────────────────────────────────────────── */
+const normalize = (raw: MessageDto): UiMsg => {
+    const id =
+        toStr(raw.messageId) ??
+        (raw.id != null ? String(raw.id) : undefined) ??
+        // 동일 메시지 중복 방지를 위한 안전망(희귀): roomId + createdAt + content 해시성
+        `${toStr(raw.roomId) || 'r'}-${toStr(raw.createdAt) || 't'}-${(toStr(raw.content) || '').slice(0, 24)}`
+    return {
+        id: id!,
+        roomId: toStr(raw.roomId),
+        sender: toStr(raw.sender),
+        username: toStr(raw.username),
+        content: toStr(raw.content) || '',
+        createdAt: raw.createdAt ?? null,
+    }
+}
+
+const sameUser = (meKeys: string[], msg: UiMsg): boolean => {
+    // sender(UUID)가 1순위, 환경에 따라 username에도 식별자가 올 수 있어서 보조 비교
+    const candidates = [msg.sender, msg.username].map(toStr)
     for (const me of meKeys) {
-        const mk = toStr(me)
-        if (!mk) continue
-        for (const c of candidates) {
-            const ck = toStr(c)
-            if (ck && eqId(mk, ck)) return true
-        }
+        for (const c of candidates) if (c && eqId(me, c)) return true
     }
     return false
 }
 
-/** 메시지 라벨: 내 메시지면 '나', 아니면 username 우선 표시(fallback 포함) */
-function renderSenderLabel(m: UiMsg, mine: boolean, peerLabel: string): string {
-    if (mine) return '나'
-    return (
-        m.username ||   // ① 서버가 내려주는 표시용 이름
-        m.sender ||     // ② 식별자(이메일/UUID 등)
-        m.id ||         // ③ 메시지 ID로라도 구분
-        peerLabel ||    // ④ 방 정보 라벨
-        'unknown'       // ⑤ 최종 폴백
-    )
-}
+const renderSenderLabel = (m: UiMsg, mine: boolean, peerLabel: string): string =>
+    mine ? '나'
+        : (m.username || m.sender || m.id || peerLabel || 'unknown')
 
-export default function ChatRoomPage(): React.ReactElement {
+/* ────────────────────────────────────────────────────────────
+ * 4) 컴포넌트
+ * ──────────────────────────────────────────────────────────── */
+export default function ChatRoomPage(): JSX.Element {
     const { roomId } = useParams<{ roomId: string }>()
     const nav = useNavigate()
 
-    // 내 식별자: UUID 우선, 없으면 email
-    const { userUuid, email, logout } = useAuth() as {
-        userUuid?: string | null
-        email?: string | null
-        logout: (reason?: string) => void
-    }
+    const { userUuid, email } = useAuth() as { userUuid?: string | null; email?: string | null }
+    const { setActiveRoom } = useNotifications() as any
 
-    const { setActiveRoom } = useNotifications()
+    // 나의 비교 키: sender는 UUID로 오므로 UUID 우선 + (보조) email
+    const myKeys = useMemo(() => {
+        const keys = [toStr(userUuid)]
+        const em = toStr(email)
+        if (em) keys.push(em)
+        return keys.filter(Boolean) as string[]
+    }, [userUuid, email])
 
-    // 내 후보 키(여러 개를 동시에 보유)
-    const myKeys = useMemo(
-        () => [toStr(userUuid), toStr(email)].filter(Boolean) as string[],
-        [userUuid, email]
-    )
+    // 상대 표시
+    const [peerKey, setPeerKey] = useState('')
+    const [peerLabel, setPeerLabel] = useState('')
 
-    // 상대 정보
-    const [peerKey, setPeerKey] = useState<string>('')     // 비교/알림용(이메일 or UUID)
-    const [peerLabel, setPeerLabel] = useState<string>('') // 화면 표시용(이메일 권장)
-
-    // 메시지/입력/연결 상태
+    // 메시지/입력/연결
     const [messages, setMessages] = useState<UiMsg[]>([])
     const [text, setText] = useState('')
     const [connected, setConnected] = useState<boolean>(ws.isConnected())
@@ -155,7 +133,7 @@ export default function ChatRoomPage(): React.ReactElement {
     const inputRef = useRef<HTMLInputElement | null>(null)
     const inputWrapRef = useRef<HTMLDivElement | null>(null)
 
-    // iOS 키보드 제어
+    // 모바일 키보드 대응
     const suppressRef = useRef(false)
     const settleTimerRef = useRef<number | null>(null)
     const rafTokenRef = useRef<number | null>(null)
@@ -164,10 +142,9 @@ export default function ChatRoomPage(): React.ReactElement {
     const closingRef = useRef<boolean>(false)
     const KB_THRESHOLD = 80
 
-    const setCSSVar = (k: string, v: string) =>
-        document.documentElement.style.setProperty(k, v)
+    const setCSSVar = (k: string, v: string) => document.documentElement.style.setProperty(k, v)
 
-    const scrollToEnd = () => {
+    const scrollToEnd = useCallback(() => {
         const el = endRef.current
         if (!el) return
         try {
@@ -176,13 +153,12 @@ export default function ChatRoomPage(): React.ReactElement {
             const list = listRef.current
             if (list) list.scrollTop = list.scrollHeight
         }
-    }
+    }, [])
 
-    const setViewportVars = () => {
+    const setViewportVars = useCallback(() => {
         const vv: any = (window as any).visualViewport
         const currentVh = Math.round(vv?.height ?? window.innerHeight)
         if (!baseVhRef.current) baseVhRef.current = currentVh
-
         setCSSVar('--vvh', `${currentVh}px`)
 
         const rawKb = Math.max(0, baseVhRef.current - currentVh)
@@ -204,77 +180,38 @@ export default function ChatRoomPage(): React.ReactElement {
                 settleTimerRef.current = null
             }
         }
-    }
+    }, [])
 
-    const setInputHeightVar = () => {
+    const setInputHeightVar = useCallback(() => {
         const h = Math.round(inputWrapRef.current?.getBoundingClientRect().height ?? 56)
         setCSSVar('--input-h', `${h}px`)
-    }
+    }, [])
 
-    const onInputFocus = () => {}
-    const onInputBlur = () => {
+    const onInputBlur = useCallback(() => {
         closingRef.current = true
         suppressRef.current = false
         if (settleTimerRef.current) window.clearTimeout(settleTimerRef.current)
         settleTimerRef.current = window.setTimeout(() => {
             document.documentElement.classList.remove('kb-open')
             closingRef.current = false
-        }, 500)
-    }
+        }, 500) as unknown as number
+    }, [])
 
-    /** 세션 가드 */
+    /* 세션/WS 업다운 핸들링(간단화) */
     useEffect(() => {
-        /*if (!userUuid && !email) {
-            logout('no identity')
-            nav('/auth', { replace: true })
-            return
-        }*/
-
-        let graceTimer: number | null = null
-        let tried = 0
-        const MAX_GRACE_MS = 10000
-        const RETRY_BASE_MS = 800
-        const RETRY_MAX_MS = 5000
-
-        const startGrace = () => {
-            if (graceTimer) window.clearTimeout(graceTimer)
-            graceTimer = window.setTimeout(() => {
-                ws.ensureConnected()
-            }, MAX_GRACE_MS)
-        }
-
-        const clearGrace = () => {
-            if (graceTimer) {
-                window.clearTimeout(graceTimer)
-                graceTimer = null
-            }
-        }
-
-        const onUp = () => {
-            clearGrace()
-            tried = 0
-        }
-
-        const onDown = () => {
-            tried += 1
-            const delay = Math.min(RETRY_BASE_MS * Math.pow(2, tried - 1), RETRY_MAX_MS)
-            window.setTimeout(() => ws.ensureConnected(), delay)
-        }
-
+        const onUp = () => setConnected(true)
+        const onDown = () => setConnected(false)
         ws.onConnect(onUp)
         ws.onDisconnect(onDown)
-
         ws.ensureConnected()
-        startGrace()
-
+        setConnected(ws.isConnected())
         return () => {
-            clearGrace()
             ws.offConnect(onUp)
             ws.offDisconnect(onDown)
         }
-    }, [userUuid, email, logout, nav])
+    }, [])
 
-    /** mount: 뷰포트 세팅 */
+    /* mount: 뷰포트 변수 */
     useEffect(() => {
         setViewportVars()
         requestAnimationFrame(setInputHeightVar)
@@ -317,92 +254,78 @@ export default function ChatRoomPage(): React.ReactElement {
             if (settleTimerRef.current) window.clearTimeout(settleTimerRef.current)
             document.documentElement.classList.remove('kb-open')
         }
-    }, [])
+    }, [scrollToEnd, setInputHeightVar, setViewportVars])
 
-    /** 방 정보에서 상대 라벨/키 구하기 */
+    /* 상대 라벨/키 추출 (members에서 나 제외) */
     useEffect(() => {
         if (!roomId) return
         let cancelled = false
-
         ;(async () => {
             try {
                 const res = await http.get<RoomLite[]>('/rooms')
-                const rooms = Array.isArray(res.data) ? res.data : []
-                const room = rooms.find(r => r.id === roomId)
+                const room = (Array.isArray(res.data) ? res.data : []).find(r => r.id === roomId)
                 if (!room) return
-
-                const mk = (toStr(userUuid) || toStr(email) || '')!.toLowerCase()
-                const members = (room.members || []).map(m => String(m))
-                const other = members.find(m => m && m.toLowerCase() !== mk) || ''
-
+                const myLower = (toStr(userUuid) || toStr(email) || '')!.toLowerCase()
+                const other = (room.members || []).map(String).find(m => m && m.toLowerCase() !== myLower) || ''
                 if (!cancelled) {
                     setPeerKey(other)
                     setPeerLabel(other)
                 }
-            } catch {
-                // ignore
-            }
+            } catch {/* ignore */}
         })()
-
         return () => { cancelled = true }
     }, [roomId, userUuid, email])
 
-    /** 방 진입/이동: 읽음 + 히스토리 */
+    /* 방 진입/이동: 읽음 + 히스토리 */
     useEffect(() => {
         if (!roomId) return
         let cancelled = false
-        setActiveRoom(roomId)
+        setActiveRoom?.(roomId)
 
         ;(async () => {
-            try {
-                await http.post(`/rooms/${encodeURIComponent(roomId)}/read`)
-            } catch {}
+            try { await http.post(`/rooms/${encodeURIComponent(roomId)}/read`) } catch {}
 
             if (cancelled) return
 
             try {
-                const res = await http.get(`/rooms/${encodeURIComponent(roomId)}/messages?limit=50`)
-                const list = Array.isArray(res.data) ? res.data.map(normalize) : []
+                const res = await http.get<MessageDto[]>(`/rooms/${encodeURIComponent(roomId)}/messages`, { params: { limit: 50 } })
+                const list = (Array.isArray(res.data) ? res.data : []).map(normalize)
+
+                // 타임라인은 오래된→최신(ASC)로 보이도록 정렬
+                list.sort((a, b) => toMillis(a.createdAt) - toMillis(b.createdAt))
+
                 setMessages(list)
                 requestAnimationFrame(scrollToEnd)
-            } catch {}
+            } catch {/* ignore */}
         })()
 
         return () => {
             cancelled = true
-            // setActiveRoom(null)
-            ;(async () => {
-                try { await http.post(`/rooms/${encodeURIComponent(roomId)}/read`) } catch {}
-            })()
-            // setActiveRoom(null)
+            // 떠날 때도 읽음 처리(미처 반영 못했을 수 있으니)
+            ;(async () => { try { await http.post(`/rooms/${encodeURIComponent(roomId)}/read`) } catch {} })()
         }
-    }, [roomId, setActiveRoom])
+    }, [roomId, setActiveRoom, scrollToEnd])
 
-    /** WebSocket 구독 */
+    /* WS 구독: /topic/rooms/{roomId} */
     useEffect(() => {
         if (!roomId) return
-
         const markConnected = () => setConnected(true)
         const markDisconnected = () => setConnected(false)
         ws.onConnect(markConnected)
         ws.onDisconnect(markDisconnected)
         setConnected(ws.isConnected())
 
-        const unsub = ws.subscribe(`/topic/rooms/${roomId}`, (payload: any) => {
-            try {
-                setMessages((prev) => {
-                    const msg = normalize(payload as RawMsg)
-                    if (msg.id && prev.some((p) => p.id === msg.id)) return prev
-                    return [...prev, msg]
-                })
-                requestAnimationFrame(() => { if (!suppressRef.current) scrollToEnd() })
-            } catch {
-                setMessages((prev) => [
-                    ...prev,
-                    normalize({ sender: 'system', message: String(payload) } as any),
-                ])
-                requestAnimationFrame(() => { if (!suppressRef.current) scrollToEnd() })
-            }
+        const unsub = ws.subscribe(`/topic/rooms/${roomId}`, (payload: MessageDto) => {
+            const msg = normalize(payload)
+            // 중복 제거
+            setMessages(prev => {
+                if (msg.id && prev.some(p => p.id === msg.id)) return prev
+                const next = [...prev, msg]
+                // 유지: 오래된→최신 정렬
+                next.sort((a, b) => toMillis(a.createdAt) - toMillis(b.createdAt))
+                return next
+            })
+            requestAnimationFrame(() => { if (!suppressRef.current) scrollToEnd() })
         })
 
         const onVisible = () => {
@@ -425,14 +348,13 @@ export default function ChatRoomPage(): React.ReactElement {
             window.removeEventListener('online', onOnline as any)
             window.removeEventListener('pageshow', onOnline as any)
         }
-    }, [roomId])
+    }, [roomId, scrollToEnd])
 
-    /** 메시지 변경 시 하단 정렬 */
-    useEffect(() => {
-        if (!suppressRef.current) scrollToEnd()
-    }, [messages])
+    /* 메시지 변경 시 하단 정렬 */
+    useEffect(() => { if (!suppressRef.current) scrollToEnd() }, [messages, scrollToEnd])
 
-    const send = async () => {
+    /* 전송 */
+    const send = useCallback(async () => {
         const body = text.trim()
         if (!body || !roomId) return
         try {
@@ -440,8 +362,8 @@ export default function ChatRoomPage(): React.ReactElement {
             setText('')
             inputRef.current?.focus({ preventScroll: true })
             setTimeout(() => { if (!suppressRef.current) scrollToEnd() }, 10)
-        } catch {}
-    }
+        } catch {/* ignore */}
+    }, [roomId, text, scrollToEnd])
 
     const handleKeyDown: React.KeyboardEventHandler<HTMLInputElement> = (e) => {
         const composing = (e as any).isComposing || (e.nativeEvent as any)?.isComposing
@@ -451,7 +373,7 @@ export default function ChatRoomPage(): React.ReactElement {
         }
     }
 
-    const headerTitle = peerLabel || roomId
+    const headerTitle = peerLabel || roomId || '대화방'
     const displayMe = toStr(email) || toStr(userUuid) || '알 수 없음'
 
     return (
@@ -482,7 +404,7 @@ export default function ChatRoomPage(): React.ReactElement {
                     value={text}
                     onChange={(e) => setText(e.target.value)}
                     onKeyDown={handleKeyDown}
-                    onFocus={onInputFocus}
+                    onFocus={() => {}}
                     onBlur={onInputBlur}
                     placeholder="메시지를 입력하세요"
                     inputMode="text"

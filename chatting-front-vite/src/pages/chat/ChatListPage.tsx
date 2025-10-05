@@ -295,9 +295,6 @@ export default function ChatListPage(): JSX.Element {
                         const count = unreadMap?.[r.id] ?? 0
                         const preview = r.lastMessagePreview || ''
                         const timeText = fmtTime(r.lastMessageAt)
-
-                        console.log("r : {}", r);
-
                         return (
                             <li
                                 key={r.id}
