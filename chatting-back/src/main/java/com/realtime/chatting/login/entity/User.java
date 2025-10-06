@@ -30,6 +30,10 @@ public class User {
     @Column(name = "username", length = 100, nullable = false)
     private String username;
 
+    /** 닉네임 */
+    @Column(name = "nickname", length = 100, nullable = false)
+    private String nickname;
+
     /** 해시된 비밀번호 */
     @Column(name = "password", nullable = false)
     private String password;

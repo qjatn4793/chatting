@@ -59,6 +59,7 @@ public class AuthService {
         User user = User.builder()
                 .id(UUID.randomUUID())
                 .username(req.username())
+                .nickname(req.username())
                 .email(email)
                 .phoneNumber(phone)
                 .password(passwordEncoder.encode(req.password()))
