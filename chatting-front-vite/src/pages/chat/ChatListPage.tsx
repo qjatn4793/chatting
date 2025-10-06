@@ -70,8 +70,7 @@ async function pLimitAll<T, R>(items: T[], limit: number, worker: (t: T) => Prom
 
 export default function ChatListPage(): JSX.Element {
     const navigate = useNavigate()
-    const { userId, user } = useAuth() as any
-    const { unread: unreadMap } = useNotifications() as any
+    const { userId, user, email } = useAuth() as any
 
     const [rooms, setRooms] = useState<Array<
         RoomDto & { lastMessageAt?: number | null; lastMessagePreview?: string | null; dmPeer?: string | null }
@@ -261,7 +260,7 @@ export default function ChatListPage(): JSX.Element {
         if (isDM) {
             if (room.dmPeer) return room.dmPeer!
             const ms = Array.isArray(room.members) ? room.members : []
-            const other = ms.find((m) => toStr(m) && toStr(m) !== meKey)
+            const other = ms.find((m) => toStr(m) && toStr(m) !== email)
             if (other) return String(other)
         }
         return room.id || '대화방'
@@ -291,7 +290,7 @@ export default function ChatListPage(): JSX.Element {
                                         {count > 0 && <span className="badge badge--unread">{count}</span>}
                                     </div>
                                     <div className="friends__preview" title={preview || undefined}>
-                                        {preview ? (timeText ? `${preview} · ${timeText}` : preview) : (timeText || '메시지가 없습니다.')}
+                                        {preview ? (timeText ? `${preview} · ${timeText}` : preview) : (timeText || '')}
                                     </div>
                                 </div>
                             </li>
