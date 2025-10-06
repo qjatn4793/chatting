@@ -203,13 +203,6 @@ export default function BottomNav(): JSX.Element {
                     <span className="badge badge--nav">{unreadTotal > 99 ? '99+' : unreadTotal}</span>
                 )}
             </NavLink>
-
-            <button className="bottomnav__item bottomnav__button" title="알림">
-              <span className="bottomnav__icon">
-                <NotificationsBell userUuid={userUuid}/>
-              </span>
-              <span className="bottomnav__label">알림</span>
-            </button>
         </nav>
     )
 }

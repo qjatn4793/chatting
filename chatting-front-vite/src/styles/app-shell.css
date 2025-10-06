@@ -8,8 +8,8 @@
     /* 단일 컬럼 레이아웃로 변경 (사이드바 제거) */
     display: grid;
     grid-template-columns: 1fr;
-    min-height: 100vh;
-    background: var(--app-bg, #f6f7fb);
+    /*min-height: 100vh;*/
+    /*background: var(--app-bg, #f6f7fb);*/
 }
 
 /* (선택) /chat/:roomId 같은 디테일 화면에서 한 칼럼을 강제하고 싶을 때 사용 */
@@ -66,7 +66,7 @@
     border-top: 1px solid #e2e8f0;
     backdrop-filter: blur(8px);
     display: grid;
-    grid-template-columns: repeat(3, 1fr);  /* 친구 / 채팅 / 알림 */
+    grid-template-columns: repeat(2, 1fr);  /* 친구 / 채팅 / 알림 */
     align-items: center;
     z-index: 1000;
 }

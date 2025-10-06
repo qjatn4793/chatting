@@ -1,35 +1,54 @@
 .auth {
-  min-height: 100vh;
-  display: grid;
-  place-items: center;
-  background:
-    radial-gradient(1200px 600px at 90% -10%, rgba(14,165,233,0.10), transparent 60%),
-    radial-gradient(900px 500px at -10% 110%, rgba(99,102,241,0.10), transparent 60%);
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    background:
+            radial-gradient(1200px 600px at 90% -10%, rgba(14,165,233,0.10), transparent 60%),
+            radial-gradient(900px 500px at -10% 110%, rgba(99,102,241,0.10), transparent 60%);
+    overscroll-behavior: contain;       /* 페이지로 스크롤 블리드 방지 */
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;                /* 더블탭 확대 완화 */
 }
 
 .auth form {
-  width: min(92vw, 380px);
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 20px;
-  box-shadow: 0 10px 30px rgba(2, 6, 23, 0.08);
-  padding: 28px;
+    width: min(92vw, 380px);
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 20px;
+    box-shadow: 0 10px 30px rgba(2, 6, 23, 0.08);
+    padding: 28px;
 }
 
 .auth h2 {
-  margin: 0 0 18px;
-  font-size: 20px;
-  font-weight: 800;
-  letter-spacing: -0.02em;
+    margin: 0 0 18px;
+    font-size: 20px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
 }
 
+/* ✅ iOS 확대 방지: 입력 폰트 최소 16px */
+.auth input {
+    font-size: 16px;
+    height: 44px;
+    padding: 0 12px;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    background: #fff;
+}
 .auth input + input { margin-top: 12px; }
+
 .auth button[type="submit"] { width: 100%; margin-top: 14px; }
 .auth .error { text-align: center; }
 .auth button[type="button"] {
-  width: 100%;
-  margin-top: 10px;
-  background: #f1f5f9; /* slate-100 */
-  color: #0f172a;
+    width: 100%;
+    margin-top: 10px;
+    background: #f1f5f9; /* slate-100 */
+    color: #0f172a;
+    font-size: 16px;
+    height: 44px;
+    border-radius: 12px;
 }
 .auth button[type="button"]:hover { background: #e2e8f0; }
+
+/* 터치 UX */
+button, .auth input { touch-action: manipulation; }

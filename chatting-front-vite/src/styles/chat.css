@@ -12,35 +12,40 @@
     --brand-2: #365dff;
     --danger: #ff4d6d;
     --bubble: #ffffff;
-    --bubble-me: #eaf0ff;          /* brand tint */
+    --bubble-me: #eaf0ff;
     --border: 1px solid #e5e7eb;
     --shadow: 0 10px 24px rgba(84, 99, 140, 0.12);
 
-    /* 키보드/뷰포트 대응용 동적 변수 */
-    --vvh: 100dvh;            /* 실제 보이는 viewport height (JS로 갱신) */
-    --kb: 0px;                /* (선택) 키보드 오버레이 추정 높이 */
-    --input-h: 56px;          /* 입력바 실측 높이 (JS로 갱신) */
-
-    /* ✅ 공통 헤더 높이(앱 셸 헤더). JS에서 실제 높이로 세팅: --app-header-h: 64px 등 */
-    --app-header-h: 56px;     /* 기본값(미세팅 시) */
+    --vvh: 100dvh;   /* JS에서 visualViewport.height로 갱신 */
+    --kb: 0px;
+    --input-h: 56px;
+    --app-header-h: 56px;
 }
 
 * { box-sizing: border-box; }
 
-/* 레이아웃이 실제 보이는 높이에 맞춰 수축/확장되도록 height와 min-height 둘 다 지정 */
+/* 문서/바디 차원에서 스크롤 블리드/러버밴드 억제 */
+html, body {
+    height: 100%;
+    overscroll-behavior: none;        /* 상하/좌우 체이닝 차단 */
+    -webkit-overflow-scrolling: touch;
+    background: var(--bg);
+}
+
 .chat {
     display: flex;
     flex-direction: column;
 
-    /* ✅ 바깥 공통 헤더 높이만큼 차감해서 정확한 높이로 고정 */
+    /* ✅ visualViewport 기반 실제 높이 사용 */
     height: calc(var(--vvh));
     min-height: calc(var(--vvh));
-
-    /* 바깥(페이지) 스크롤 방지, 내부 리스트만 스크롤 */
     overflow: hidden;
 
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+
+    /* 바깥으로 스크롤 전달되지 않도록 */
+    overscroll-behavior: contain;
 }
 
 /* ===== Header ===== */
@@ -53,7 +58,7 @@
     align-items: center;
     gap: 12px;
     padding: 14px 18px;
-    background: rgba(255, 255, 255, 0.75);
+    background: rgba(255, 255, 255, 0.86);
     backdrop-filter: blur(8px);
     border-bottom: var(--border);
 }
@@ -63,7 +68,7 @@
     font-size: 16px;
     font-weight: 600;
     letter-spacing: .2px;
-    color: #ffffff;
+    color: #0b1220;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -74,13 +79,14 @@
     border: 0;
     padding: 8px 10px;
     border-radius: 10px;
-    background: #160b0b;
+    background: #f1f5f9;
     border: var(--border);
-    color: #d5def0;
+    color: #0f172a;
     cursor: pointer;
     transition: transform .06s ease, background .2s ease;
+    touch-action: manipulation;       /* 더블탭 확대 억제 */
 }
-.chat__header button:hover { background: #0f172a; transform: translateY(-1px); }
+.chat__header button:hover { background: #e2e8f0; transform: translateY(-1px); }
 .chat__header button:active { transform: translateY(0); }
 
 .muted { color: var(--muted); font-size: 12px; }
@@ -88,27 +94,29 @@
 /* ===== Message List ===== */
 .chat__list {
     flex: 1 1 auto;
-    min-height: 0;                 /* ✅ flex 컨테이너에서 내부 스크롤 위해 필요 */
+    min-height: 0;
     overflow: auto;
 
-    /* 입력바 + 약간의 여유를 실제 높이에 맞춰 확보 */
+    /* 입력바 + 여유 */
     padding: 16px 18px calc(var(--input-h) + 32px + env(safe-area-inset-bottom, 0px));
 
     display: flex;
     flex-direction: column;
     gap: 12px;
+
+    /* iOS 자연 스크롤 + 블리드 차단 */
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
     scroll-behavior: auto;
-    -webkit-overflow-scrolling: auto;
 }
 
-/* (옵션) 키보드 열릴 때 리스트 바닥 여유 조금 더 확보 */
 .kb-open .chat__list {
     padding-bottom: calc(var(--input-h) + 32px + var(--kb) + env(safe-area-inset-bottom, 0px));
 }
 
-/* ===== Message Item (left/right alignment) ===== */
+/* ===== Message Item ===== */
 .chat__msg {
-    align-self: flex-start;          /* default: left bubble */
+    align-self: flex-start;
     display: grid;
     grid-template-columns: 1fr;
     max-width: min(720px, 92%);
@@ -116,10 +124,9 @@
     padding: 2px 0;
     text-align: left;
 }
-
 .chat__msg.me {
-    margin-left: auto;               /* push to right */
-    align-self: flex-end;            /* right alignment */
+    margin-left: auto;
+    align-self: flex-end;
     text-align: right;
 }
 
@@ -136,22 +143,21 @@
     width: fit-content;
     max-width: 100%;
     padding: 10px 12px;
-    border-radius: 14px 14px 14px 6px;     /* left-tail look */
+    border-radius: 14px 14px 14px 6px;
     border: var(--border);
     box-shadow: var(--shadow);
     line-height: 1.45;
     word-break: break-word;
     white-space: pre-wrap;
+    background: var(--bubble);
 }
-
 .chat__msg.me .chat__bubble {
     background: var(--bubble-me);
     border-color: #2a62ff33;
-    border-radius: 14px 14px 6px 14px;     /* right-tail look */
+    border-radius: 14px 14px 6px 14px;
 }
 
 /* ===== Input Bar ===== */
-/* sticky로 충분하지만, 모바일에서 safe-area를 고려해 하단 여백 포함 */
 .chat__input {
     position: sticky;
     bottom: 0;
@@ -169,12 +175,13 @@
     border-top: var(--border);
     backdrop-filter: blur(6px);
     z-index: 20;
+    overscroll-behavior: contain;
 }
 
 .chat__input input {
     width: 100%;
     height: 44px;
-    font-size: 16px;
+    font-size: 16px;             /* ✅ 확대 방지 */
     line-height: 1.2;
     -webkit-text-size-adjust: 100%;
     padding: 0 14px;
@@ -183,7 +190,6 @@
     border: var(--border);
     color: var(--text);
     outline: none;
-    transition: none;
 }
 .chat__input input::placeholder { color: #789; }
 .chat__input input:focus { border-color: #2a62ff66; box-shadow: none; }
@@ -199,6 +205,7 @@
     font-weight: 600;
     box-shadow: 0 8px 18px rgba(79, 124, 255, .25);
     transition: transform .06s ease, filter .2s ease, box-shadow .2s ease;
+    touch-action: manipulation;
 }
 .chat__input button:hover { filter: brightness(1.05); transform: translateY(-1px); }
 .chat__input button:active { transform: translateY(0); }

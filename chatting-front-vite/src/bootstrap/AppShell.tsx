@@ -6,7 +6,7 @@ import BottomNav from '@/bootstrap/BottomNav'
 import '@/styles/app-shell.css'
 
 export default function AppShell(): JSX.Element {
-    const { email, logout } = useAuth() as any
+    const { userUuid, email, logout } = useAuth() as any
 
     // ✅ 정확히 /chat/:roomId 일 때만 "상세"로 판단
     const isChatDetail = !!useMatch('/chat/:roomId')
@@ -27,6 +27,7 @@ export default function AppShell(): JSX.Element {
                         </div>
                     </div>
                     <div className="app__topbar__right">
+                        <NotificationsBell userUuid={userUuid} />
                         <button
                             type="button"
                             className="btn btn--logout app__logout"

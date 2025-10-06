@@ -1,4 +1,3 @@
-// src/pages/chat/ChatRoomPage.tsx
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import '@/styles/chat.css'
@@ -67,14 +66,48 @@ export default function ChatRoomPage(): JSX.Element {
     const endRef = useRef<HTMLDivElement | null>(null)
     const inputRef = useRef<HTMLInputElement | null>(null)
 
-    const scrollToEnd = useCallback(() => {
-        const el = endRef.current
-        if (!el) return
-        try { el.scrollIntoView({ behavior: 'auto', block: 'end' }) }
-        catch { const list = listRef.current; if (list) list.scrollTop = list.scrollHeight }
+    // ✅ “바닥 근접” 상태 추적 (새 메시지 올 때 무조건 당기지 않도록)
+    const nearBottomRef = useRef(true)
+    const NEAR_PX = 36
+
+    const measureNearBottom = useCallback(() => {
+        const el = listRef.current
+        if (!el) { nearBottomRef.current = true; return }
+        const diff = el.scrollHeight - el.scrollTop - el.clientHeight
+        nearBottomRef.current = diff <= NEAR_PX
     }, [])
 
-    const { setInputHeightRef, onInputBlur } = useViewportKB({ onStable: scrollToEnd })
+    const scrollToEnd = useCallback((behavior: ScrollBehavior = 'auto') => {
+        const el = endRef.current
+        if (!el) return
+        try { el.scrollIntoView({ behavior, block: 'end' }) }
+        catch {
+            const list = listRef.current
+            if (list) list.scrollTop = list.scrollHeight
+        }
+    }, [])
+
+    const { setInputHeightRef, onInputBlur } = useViewportKB({
+        onStable: () => scrollToEnd('auto')
+    })
+
+    // ✅ iOS Safari 정확한 viewport height(주소창/키보드 변동 대응)
+    useEffect(() => {
+        const setVVH = () => {
+            const vh = (window as any).visualViewport?.height ?? window.innerHeight
+            document.documentElement.style.setProperty('--vvh', `${vh}px`)
+        }
+        setVVH()
+        const vv = (window as any).visualViewport
+        vv?.addEventListener('resize', setVVH)
+        window.addEventListener('resize', setVVH)
+        window.addEventListener('orientationchange', setVVH)
+        return () => {
+            vv?.removeEventListener('resize', setVVH)
+            window.removeEventListener('resize', setVVH)
+            window.removeEventListener('orientationchange', setVVH)
+        }
+    }, [])
 
     useEffect(() => {
         const onUp = () => setConnected(true)
@@ -84,7 +117,7 @@ export default function ChatRoomPage(): JSX.Element {
         return () => { ws.offConnect(onUp); ws.offDisconnect(onDown) }
     }, [])
 
-    // 상대 라벨 (members에서 나 제외)
+    // 상대 라벨
     useEffect(() => {
         if (!roomId) return
         let cancelled = false
@@ -114,7 +147,7 @@ export default function ChatRoomPage(): JSX.Element {
                 const list = (Array.isArray(res.data) ? res.data : []).map(normalize)
                 list.sort((a, b) => toMillis(a.createdAt) - toMillis(b.createdAt))
                 setMessages(list)
-                requestAnimationFrame(scrollToEnd)
+                requestAnimationFrame(() => scrollToEnd('auto'))
             } catch {}
         })()
         return () => {
@@ -122,6 +155,17 @@ export default function ChatRoomPage(): JSX.Element {
             ;(async () => { try { await RoomsAPI.markRead(roomId) } catch {} })()
         }
     }, [roomId, setActiveRoom, scrollToEnd])
+
+    // 리스트 스크롤 이벤트로 “바닥 근접” 상태 갱신
+    useEffect(() => {
+        const el = listRef.current
+        if (!el) return
+        const onScroll = () => measureNearBottom()
+        el.addEventListener('scroll', onScroll, { passive: true })
+        // 초기 측정
+        measureNearBottom()
+        return () => { el.removeEventListener('scroll', onScroll) }
+    }, [measureNearBottom])
 
     // WS 구독
     useEffect(() => {
@@ -135,17 +179,22 @@ export default function ChatRoomPage(): JSX.Element {
             const msg = normalize(payload)
             setMessages((prev) => {
                 if (msg.id && prev.some((p) => p.id === msg.id)) return prev
-                const next = [...prev, msg]
-                next.sort((a, b) => toMillis(a.createdAt) - toMillis(b.createdAt))
+                const next = [...prev, msg].sort((a, b) => toMillis(a.createdAt) - toMillis(b.createdAt))
                 return next
             })
-            requestAnimationFrame(scrollToEnd)
+
+            // 내가 보낸 메시지거나, 현재 바닥 근처면 자동 스크롤
+            const mine = sameUser(myKeys, msg)
+            if (mine || nearBottomRef.current) {
+                requestAnimationFrame(() => scrollToEnd('smooth'))
+            }
         })
 
         const onVisible = () => {
             if (document.visibilityState === 'visible') {
                 ws.ensureConnected()
-                scrollToEnd()
+                // 화면 복귀 시에도 바닥 근접 상태면 정렬
+                if (nearBottomRef.current) scrollToEnd('auto')
             }
         }
         const onOnline = () => { ws.ensureConnected() }
@@ -161,9 +210,12 @@ export default function ChatRoomPage(): JSX.Element {
             window.removeEventListener('online', onOnline as any)
             window.removeEventListener('pageshow', onOnline as any)
         }
-    }, [roomId, scrollToEnd])
+    }, [roomId, scrollToEnd, myKeys])
 
-    useEffect(() => { scrollToEnd() }, [messages, scrollToEnd])
+    useEffect(() => {
+        // 신규 히스토리 세팅 후에도 바닥 근접이면 한번 정렬
+        if (nearBottomRef.current) scrollToEnd('auto')
+    }, [messages, scrollToEnd])
 
     const send = useCallback(async () => {
         const body = text.trim()
@@ -172,7 +224,8 @@ export default function ChatRoomPage(): JSX.Element {
             await RoomsAPI.send(roomId, { message: body })
             setText('')
             inputRef.current?.focus({ preventScroll: true })
-            setTimeout(() => scrollToEnd(), 10)
+            // 내가 보낸 메시지는 항상 아래로
+            setTimeout(() => scrollToEnd('smooth'), 10)
         } catch {}
     }, [roomId, text, scrollToEnd])
 

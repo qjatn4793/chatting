@@ -1,4 +1,3 @@
-// src/pages/chat/ChatListPage.tsx
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import '@/styles/friends.css'
@@ -18,7 +17,6 @@ type UiMsg = {
     username?: string
 }
 
-// ✅ 문자열/숫자/nullable을 안전하게 epoch ms 로 변환
 const toMillis = (v: string | number | null | undefined): number => {
     if (v === null || v === undefined) return -Infinity
     if (typeof v === 'number') return v
@@ -43,12 +41,11 @@ const normalizeMsg = (m: MessageDto): UiMsg | null => {
     }
 }
 
-// 간단한 동시성 제한 실행기
+// 동시성 제한
 async function pLimitAll<T, R>(items: T[], limit: number, worker: (t: T) => Promise<R>): Promise<R[]> {
     const ret: R[] = []
     let idx = 0
     let active = 0
-
     return await new Promise<R[]>((resolve) => {
         const kick = () => {
             if (idx >= items.length && active === 0) return resolve(ret)
@@ -58,10 +55,7 @@ async function pLimitAll<T, R>(items: T[], limit: number, worker: (t: T) => Prom
                 worker(cur)
                     .then((r) => ret.push(r as any))
                     .catch(() => void 0)
-                    .finally(() => {
-                        active--
-                        kick()
-                    })
+                    .finally(() => { active--; kick() })
             }
         }
         kick()
@@ -88,7 +82,24 @@ export default function ChatListPage(): JSX.Element {
     const subsRef = useRef<Map<string, () => void>>(new Map())
     const prefetchOnceRef = useRef(false)
 
-    /** rooms 1회 로드 → 캐시로 즉시 수화 → 구독 동기화 → 결손 프리패치(1회) */
+    // ✅ iOS Safari 정확한 viewport height(러버밴드/주소창 변동 대응)
+    useEffect(() => {
+        const setVVH = () => {
+            const vh = (window as any).visualViewport?.height ?? window.innerHeight
+            document.documentElement.style.setProperty('--vvh', `${vh}px`)
+        }
+        setVVH()
+        const vv = (window as any).visualViewport
+        vv?.addEventListener('resize', setVVH)
+        window.addEventListener('resize', setVVH)
+        window.addEventListener('orientationchange', setVVH)
+        return () => {
+            vv?.removeEventListener('resize', setVVH)
+            window.removeEventListener('resize', setVVH)
+            window.removeEventListener('orientationchange', setVVH)
+        }
+    }, [])
+
     const loadRoomsOnce = useCallback(async () => {
         if (abortRef.current) abortRef.current.abort()
         const ac = new AbortController()
@@ -99,30 +110,26 @@ export default function ChatListPage(): JSX.Element {
             const res = await RoomsAPI.list({ signal: ac.signal })
             const base: RoomDto[] = Array.isArray(res.data) ? res.data : []
 
-            // (1) 기본 배열 구성
             let enriched = base.map((room) => ({
                 ...room,
                 dmPeer: null,
                 lastMessagePreview: null,
-                lastMessageAt: null as number | null, // ← 숫자로 유지
+                lastMessageAt: null as number | null,
             }))
 
-            // (2) 캐시 수화(즉시 화면 반영)
             enriched = previewCache.hydrateRooms(enriched).map((r: any) => ({
                 ...r,
                 lastMessageAt: typeof r.lastMessageAt === 'number' ? r.lastMessageAt : toMillis(r.lastMessageAt),
             }))
             setRooms(enriched)
 
-            // (3) 방 구독 동기화
             syncRoomSubscriptions(enriched.map((r) => r.id))
 
-            // (4) 캐시에 없는 방만, 소량/동시제한으로 마지막 메시지 1개 프리패치 (마운트당 1회)
             if (!prefetchOnceRef.current) {
                 prefetchOnceRef.current = true
                 const missing = enriched
                     .filter((r) => !r.lastMessageAt && !r.lastMessagePreview)
-                    .slice(0, 20) // 너무 많으면 상위 20개만
+                    .slice(0, 20)
                     .map((r) => r.id)
 
                 await pLimitAll(missing, 4, async (rid) => {
@@ -138,8 +145,7 @@ export default function ChatListPage(): JSX.Element {
                             const next = prev.slice()
                             const r = { ...next[idx] }
                             r.lastMessagePreview = m.content
-                            r.lastMessageAt = toMillis(m.createdAt) // ✅ 숫자로 저장
-                            // dmPeer 보강
+                            r.lastMessageAt = toMillis(m.createdAt)
                             if ((r.type || '').toUpperCase() === 'DM' || (r.members?.length || 0) === 2) {
                                 if (!r.dmPeer) {
                                     r.dmPeer =
@@ -151,13 +157,10 @@ export default function ChatListPage(): JSX.Element {
                                 }
                             }
                             next[idx] = r
-                            // 캐시에도 저장 (숫자 ms)
                             previewCache.set(rid, { preview: r.lastMessagePreview, at: r.lastMessageAt, dmPeer: r.dmPeer })
                             return next
                         })
-                    } catch {
-                        /* ignore */
-                    }
+                    } catch { /* ignore */ }
                 })
             }
         } catch (e) {
@@ -171,19 +174,16 @@ export default function ChatListPage(): JSX.Element {
         }
     }, [meKey])
 
-    /** 구독 레지스트리 동기화 */
     const syncRoomSubscriptions = useCallback((targetIds: string[]) => {
         const current = subsRef.current
         const targetSet = new Set(targetIds)
 
-        // 제거
         for (const [rid, off] of current.entries()) {
             if (!targetSet.has(rid)) {
                 try { off() } catch {}
                 current.delete(rid)
             }
         }
-        // 추가
         targetIds.forEach((rid) => {
             if (current.has(rid)) return
             try {
@@ -196,7 +196,7 @@ export default function ChatListPage(): JSX.Element {
                         const next = prev.slice()
                         const r = { ...next[idx] }
                         r.lastMessagePreview = m.content
-                        r.lastMessageAt = toMillis(m.createdAt) // ✅ 숫자로 저장
+                        r.lastMessageAt = toMillis(m.createdAt)
                         if ((r.type || '').toUpperCase() === 'DM' || (r.members?.length || 0) === 2) {
                             if (!r.dmPeer) {
                                 r.dmPeer =
@@ -208,7 +208,6 @@ export default function ChatListPage(): JSX.Element {
                             }
                         }
                         next[idx] = r
-                        // ▶ 캐시 저장 (숫자 ms)
                         previewCache.set(rid, { preview: r.lastMessagePreview, at: r.lastMessageAt, dmPeer: r.dmPeer })
                         return next
                     })
@@ -218,13 +217,11 @@ export default function ChatListPage(): JSX.Element {
         })
     }, [meKey])
 
-    // 마운트/가시성/온라인에서 드문 보강
     useEffect(() => {
         loadRoomsOnce()
         try { ws.ensureConnected() } catch {}
         const onVisible = () => {
             if (document.visibilityState === 'visible') {
-                // 캐시 수화만 먼저
                 setRooms((prev) =>
                     previewCache.hydrateRooms(prev).map((r: any) => ({
                         ...r,
@@ -246,13 +243,11 @@ export default function ChatListPage(): JSX.Element {
         }
     }, [loadRoomsOnce])
 
-    // ✅ 정렬: 숫자 ms 기준
     const sortedRooms = useMemo(
         () => [...rooms].sort((a, b) => toMillis(b.lastMessageAt ?? null) - toMillis(a.lastMessageAt ?? null)),
         [rooms]
     )
 
-    // 타이틀
     const titleOf = useCallback((room: RoomDto & { dmPeer?: string | null }): string => {
         const isDM =
             (room.type && room.type.toUpperCase() === 'DM') ||
@@ -264,7 +259,7 @@ export default function ChatListPage(): JSX.Element {
             if (other) return String(other)
         }
         return room.id || '대화방'
-    }, [meKey])
+    }, [meKey, email])
 
     const { unread: unreadState } = useNotifications() as any
 
@@ -281,7 +276,7 @@ export default function ChatListPage(): JSX.Element {
                         const title = titleOf(r)
                         const count = unreadState?.[r.id] ?? 0
                         const preview = r.lastMessagePreview || ''
-                        const timeText = fmtTime(r.lastMessageAt) // fmtTime이 숫자 ms/ISO 모두 처리한다면 OK
+                        const timeText = fmtTime(r.lastMessageAt)
                         return (
                             <li key={r.id} className="friends__item" onClick={() => navigate(`/chat/${r.id}`)}>
                                 <div className="friends__left">

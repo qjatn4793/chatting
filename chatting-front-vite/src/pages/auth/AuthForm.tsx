@@ -24,13 +24,11 @@ export default function AuthForm(): JSX.Element {
 
     const nav = useNavigate()
     const loc = useLocation() as ReturnType<typeof useLocation> & { state: LocationState }
-    const { isAuthed, login } = useAuth()
+    const { isAuthed, login } = useAuth() as any
 
     // 이미 로그인 상태면 /friends 로
     useEffect(() => {
-        if (isAuthed) {
-            nav('/friends', { replace: true })
-        }
+        if (isAuthed) nav('/friends', { replace: true })
     }, [isAuthed, nav])
 
     const validateRegister = () => {
@@ -43,12 +41,12 @@ export default function AuthForm(): JSX.Element {
 
     const submit = async (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault()
-        if (loading) return // 더블 클릭 방지
+        if (loading) return
         setErr('')
         setLoading(true)
 
         const ac = new AbortController()
-        const timeoutId = window.setTimeout(() => ac.abort(), 15000) // 15s 타임아웃
+        const timeoutId = window.setTimeout(() => ac.abort(), 15000)
 
         try {
             if (mode === 'register') {
@@ -61,12 +59,9 @@ export default function AuthForm(): JSX.Element {
                     phoneNumber: phoneNumber.trim() || null,
                     password,
                     birthDate: birthDate || null,
-                }, {
-                    signal: ac.signal,
-                    headers: { 'X-Skip-Auth': '1' },
-                })
+                }, { signal: ac.signal, headers: { 'X-Skip-Auth': '1' } })
 
-                // 가입 후 바로 로그인 UX: identifier 우선순위 (email > phone)
+                // 가입 후 바로 로그인 UX
                 const autoIdentifier = (email || phoneNumber).trim()
                 setIdentifier(autoIdentifier)
                 setMode('login')
@@ -79,29 +74,15 @@ export default function AuthForm(): JSX.Element {
                 const { data } = await http.post('/auth/login', {
                     identifier: identifier.trim(),
                     password,
-                }, {
-                    signal: ac.signal,
-                    headers: { 'X-Skip-Auth': '1' },
-                })
+                }, { signal: ac.signal, headers: { 'X-Skip-Auth': '1' } })
 
-                const access =
-                    (data as any)?.accessToken ??
-                    (data as any)?.token ??
-                    (data as any)?.jwt
+                const access = (data as any)?.accessToken ?? (data as any)?.token ?? (data as any)?.jwt
                 const refresh = (data as any)?.refreshToken ?? null
-
                 if (!access) throw new Error('서버 응답에 accessToken이 없습니다.')
 
                 const anyLogin: any = login
-                try {
-                    if (typeof anyLogin === 'function' && anyLogin.length >= 2) {
-                        anyLogin(access, refresh)
-                    } else {
-                        anyLogin(access)
-                    }
-                } catch {
-                    anyLogin(access)
-                }
+                try { (typeof anyLogin === 'function' && anyLogin.length >= 2) ? anyLogin(access, refresh) : anyLogin(access) }
+                catch { anyLogin(access) }
 
                 const to = loc.state?.from?.pathname ?? '/friends'
                 nav(to, { replace: true })
@@ -111,11 +92,7 @@ export default function AuthForm(): JSX.Element {
                 setErr('요청이 시간 초과되었습니다. 네트워크를 확인해 주세요.')
             } else {
                 const r = (e as any)?.response
-                const m =
-                    r?.data?.message ||
-                    r?.data?.error ||
-                    (e as any)?.message ||
-                    '실패했습니다.'
+                const m = r?.data?.message || r?.data?.error || (e as any)?.message || '실패했습니다.'
                 setErr(String(m))
             }
         } finally {
@@ -124,35 +101,31 @@ export default function AuthForm(): JSX.Element {
         }
     }
 
-    // 사용자가 치는 즉시 보기 좋게 yyyy-MM-dd 로 "부분 포맷"
+    // 사용자가 치는 즉시 yyyy-MM-dd 로 부분 포맷
     function formatBirthTyping(raw: string): string {
-        const digits = raw.replace(/\D/g, '').slice(0, 8) // 숫자만 최대 8자리(yyyyMMdd)
+        const digits = raw.replace(/\D/g, '').slice(0, 8)
         const y = digits.slice(0, 4)
         const m = digits.slice(4, 6)
         const d = digits.slice(6, 8)
-
         let out = y
         if (m) out += '-' + m
         if (d) out += '-' + d
         return out
     }
 
-    // 포커스 아웃 시 최종 보정(1자리 월/일 → 2자리로 보정, 대충 숫자만 쳐도 교정)
+    // 포커스 아웃 시 최종 보정
     function normalizeBirthOnBlur(raw: string): string {
         const digits = raw.replace(/\D/g, '').slice(0, 8)
-        if (digits.length === 0) return '' // 빈값 허용
+        if (digits.length === 0) return ''
         const y = digits.slice(0, 4)
         let m = digits.slice(4, 6)
         let d = digits.slice(6, 8)
-
         if (m.length === 1) m = '0' + m
         if (d.length === 1) d = '0' + d
-
         const mi = Math.min(Math.max(parseInt(m || '1', 10), 1), 12)
         const di = Math.min(Math.max(parseInt(d || '1', 10), 1), 31)
         const mm = String(mi).padStart(2, '0')
         const dd = String(di).padStart(2, '0')
-
         return `${y}${m ? '-' + mm : ''}${d ? '-' + dd : ''}`
     }
 

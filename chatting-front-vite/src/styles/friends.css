@@ -3,6 +3,10 @@
     /*max-width: 730px;*/
     margin: 24px auto;
     padding: 0 20px;
+
+    /* 내부 섹션만 스크롤되도록 - iOS 러버밴드 방지 */
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
 }
 
 .friends h2 {
@@ -28,7 +32,6 @@
 }
 
 /* ========== 공통 버튼/배지 ========== */
-/* 기본 버튼(페이지 전반에서 사용) */
 .btn {
     display: inline-flex;
     align-items: center;
@@ -45,12 +48,12 @@
     cursor: pointer;
     text-decoration: none;
     transition: background .15s ease, border-color .15s ease, box-shadow .15s ease;
+    touch-action: manipulation; /* 더블탭 확대 줄임 */
 }
 .btn:hover { background: #f1f5f9; border-color: #e2e8f0; }
 .btn:active { background: #e2e8f0; }
 .btn:disabled { opacity: .6; cursor: not-allowed; }
 
-/* 아이콘 전용 버튼 (종 아이콘 등) */
 .btn--icon {
     width: 36px; height: 36px;
     padding: 0;
@@ -62,16 +65,11 @@
 .btn--icon:hover { background: #f1f5f9; }
 .btn--icon.is-active { background: #eef2ff; border-color: #c7d2fe; }
 
-/* 로그아웃 버튼 */
 .btn--logout { background: #fee2e2; border-color: #fecaca; color: #0f172a; }
 .btn--logout:hover { background: #fecaca; }
 
-/* 종 버튼 자체에 약간의 레이아웃 제어 */
-.friends__bell {
-    position: relative; /* 배지 배치용 기준 */
-}
+.friends__bell { position: relative; }
 
-/* 알림(종) 배지 */
 .badge--notif {
     position: absolute;
     top: -4px; right: -4px;
@@ -83,13 +81,12 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    background: #ef4444; /* red-500 */
+    background: #ef4444;
     color: #fff;
     font-weight: 700;
-    box-shadow: 0 0 0 2px #fff; /* 가장자리 선명도 보정 */
+    box-shadow: 0 0 0 2px #fff;
 }
 
-/* 친구별 미읽음 배지 (리스트용) */
 .badge.badge--unread {
     display: inline-flex;
     min-width: 20px;
@@ -100,7 +97,7 @@
     line-height: 20px;
     justify-content: center;
     align-items: center;
-    background: #ef4444; /* red-500 */
+    background: #ef4444;
     color: #fff;
     font-weight: 700;
 }
@@ -114,13 +111,13 @@
 .friends__add input { min-width: 200px; }
 .friends__add button { padding-inline: 16px; }
 
-/* ========== 리스트 (구형/신형 동시 지원) ========== */
+/* ========== 리스트 ========== */
 .friends__list {
     list-style: none; padding: 0; margin: 0;
     display: grid; gap: 8px;
+    overscroll-behavior: contain;     /* 목록 내 스크롤 체이닝 차단 */
 }
 
-/* 구형 레이아웃(기존 .friends__row 사용하는 곳에 영향 X) */
 .friends__row {
     display: flex; align-items: center; justify-content: space-between;
     background: #fff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 12px 14px;
@@ -131,7 +128,6 @@
 }
 .friends__row a:hover { background: #e2e8f0; }
 
-/* 신형 레이아웃(새 FriendsPage 구조) */
 .friends__item {
     display: flex;
     align-items: center;
@@ -141,45 +137,41 @@
     border-radius: 16px;
     padding: 12px 14px;
 }
-.friends__name {
-    flex: 1; /* 이름은 왼쪽, 배지/버튼은 오른쪽으로 밀림 */
-}
+.friends__name { flex: 1; }
 .friends__left {
     display: flex;
     flex-direction: column;
-    min-width: 0;          /* ellipsis가 먹도록 */
-    flex: 1;               /* 남는 공간을 차지 */
+    min-width: 0;
+    flex: 1;
 }
 .friends__nameRow {
     display: flex;
     align-items: center;
-    gap: 8px;              /* 이름과 배지 간격 */
+    gap: 8px;
     min-width: 0;
 }
 .friends__preview {
     margin-top: 2px;
     font-size: 13px;
-    color: #64748b;        /* slate-500 */
-    max-width: 60ch;       /* 필요시 조정 */
+    color: #64748b;
+    max-width: 60ch;
     white-space: nowrap;
     overflow: hidden;
-    text-overflow: ellipsis; /* … 줄임표 */
+    text-overflow: ellipsis;
 }
-/* 버튼이 너무 붙어 보이지 않게 오른쪽 여백 확보 */
 .friends__item .btn { margin-left: 8px; }
-/* 작은 화면에서 미리보기 줄 길이 살짝 늘리기 */
+
 @media (max-width: 480px) {
     .friends__preview { max-width: 48ch; }
 }
 
-/* ========== Requests Panel(기존 섹션형) ========== */
-/* (모달 내부에서도 재사용 가능) */
+/* ========== Requests Panel ========== */
 .requests { margin-top: 24px; }
 .requests h3 { margin: 0 0 12px; font-size: 18px; font-weight: 800; }
 .requests__cols {
     display: grid;
     gap: 12px;
-    grid-template-columns: 1fr; /* ✅ 항상 단일 컬럼 */
+    grid-template-columns: 1fr;
     width: 100%;
 }
 .requests section {
@@ -194,8 +186,7 @@
 }
 .req + .req { border-top: 1px dashed #e2e8f0; }
 
-/* ========== Modal (NotificationsBell 팝업) ========== */
-/* 오버레이 */
+/* ========== Modal ========== */
 .modal__overlay {
     position: fixed;
     inset: 0;
@@ -207,7 +198,6 @@
     z-index: 1000;
 }
 
-/* 내용 패널 */
 .modal__panel {
     width: min(560px, 92vw);
     background: #fff;
@@ -218,7 +208,6 @@
     overflow: hidden;
 }
 
-/* 다크 테마 대응(선택, 변수 사용 중이면 생략 가능) */
 @media (prefers-color-scheme: dark) {
     .modal__panel {
         background: #11182a;
@@ -228,19 +217,12 @@
     }
 }
 
-/* 헤더/바디 */
 .modal__header {
     display: flex; align-items: center; justify-content: space-between;
     padding: 14px 16px;
     border-bottom: 1px solid #e2e8f0;
     background: #f8fafc;
 }
-.modal__body {
-    padding: 12px;
-}
-
-/* 헤더 내부 버튼(닫기 X 등) */
-.modal__header .btn--icon {
-    background: #f1f5f9;
-}
+.modal__body { padding: 12px; }
+.modal__header .btn--icon { background: #f1f5f9; }
 .modal__header .btn--icon:hover { background: #e2e8f0; }
