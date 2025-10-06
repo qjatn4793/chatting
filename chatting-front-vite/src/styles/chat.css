@@ -16,27 +16,29 @@
     --border: 1px solid #e5e7eb;
     --shadow: 0 10px 24px rgba(84, 99, 140, 0.12);
 
-    --vvh: 100dvh;   /* JS에서 visualViewport.height로 갱신 */
-    --kb: 0px;
-    --input-h: 56px;
+    /* JS(visualViewport)로 갱신되는 동적 변수 */
+    --vvh: 100dvh;   /* 실제 보이는 viewport height */
+    --kb: 0px;       /* 키보드로 줄어든 높이 추정 */
+    --input-h: 56px; /* 입력 바 실제 높이 */
+
     --app-header-h: 56px;
 }
 
 * { box-sizing: border-box; }
 
-/* 문서/바디 차원에서 스크롤 블리드/러버밴드 억제 */
+/* 문서/바디 차원에서 스크롤 체이닝 차단 */
 html, body {
     height: 100%;
-    overscroll-behavior: none;        /* 상하/좌우 체이닝 차단 */
+    overscroll-behavior-y: none;     /* 상하 체이닝 글로벌 차단 */
     -webkit-overflow-scrolling: touch;
     background: var(--bg);
 }
 
+/* 레이아웃은 보이는 높이에 정확히 맞추고, 페이지 스크롤을 막는다 */
 .chat {
     display: flex;
     flex-direction: column;
 
-    /* ✅ visualViewport 기반 실제 높이 사용 */
     height: calc(var(--vvh));
     min-height: calc(var(--vvh));
     overflow: hidden;
@@ -44,8 +46,7 @@ html, body {
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
 
-    /* 바깥으로 스크롤 전달되지 않도록 */
-    overscroll-behavior: contain;
+    overscroll-behavior: contain;    /* 내부 스크롤만 허용 */
 }
 
 /* ===== Header ===== */
@@ -84,7 +85,7 @@ html, body {
     color: #0f172a;
     cursor: pointer;
     transition: transform .06s ease, background .2s ease;
-    touch-action: manipulation;       /* 더블탭 확대 억제 */
+    touch-action: manipulation;       /* 더블탭 확대 완화 */
 }
 .chat__header button:hover { background: #e2e8f0; transform: translateY(-1px); }
 .chat__header button:active { transform: translateY(0); }
@@ -104,17 +105,17 @@ html, body {
     flex-direction: column;
     gap: 12px;
 
-    /* iOS 자연 스크롤 + 블리드 차단 */
     -webkit-overflow-scrolling: touch;
     overscroll-behavior: contain;
     scroll-behavior: auto;
 }
 
+/* 키보드가 열리면 하단 여백을 키보드 높이만큼 추가 확보 */
 .kb-open .chat__list {
     padding-bottom: calc(var(--input-h) + 32px + var(--kb) + env(safe-area-inset-bottom, 0px));
 }
 
-/* ===== Message Item ===== */
+/* ===== Message Item (left/right alignment) ===== */
 .chat__msg {
     align-self: flex-start;
     display: grid;
@@ -124,6 +125,7 @@ html, body {
     padding: 2px 0;
     text-align: left;
 }
+
 .chat__msg.me {
     margin-left: auto;
     align-self: flex-end;
@@ -158,6 +160,7 @@ html, body {
 }
 
 /* ===== Input Bar ===== */
+/* 기본은 sticky, 내부 체이닝 차단 + 세로 드래그 상위 전파 억제 */
 .chat__input {
     position: sticky;
     bottom: 0;
@@ -175,13 +178,23 @@ html, body {
     border-top: var(--border);
     backdrop-filter: blur(6px);
     z-index: 20;
-    overscroll-behavior: contain;
+
+    overscroll-behavior-y: contain;
+    touch-action: pan-x; /* 수평 제스처는 허용, 세로는 JS에서 차단 */
+}
+
+/* ✅ 키보드 열린 동안에는 fixed로 전환해 iOS sticky 페인트 버그 제거 */
+.kb-open .chat__input {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
 }
 
 .chat__input input {
     width: 100%;
     height: 44px;
-    font-size: 16px;             /* ✅ 확대 방지 */
+    font-size: 16px;             /* iOS 확대 방지 */
     line-height: 1.2;
     -webkit-text-size-adjust: 100%;
     padding: 0 14px;

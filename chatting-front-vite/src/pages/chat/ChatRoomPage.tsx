@@ -66,7 +66,7 @@ export default function ChatRoomPage(): JSX.Element {
     const endRef = useRef<HTMLDivElement | null>(null)
     const inputRef = useRef<HTMLInputElement | null>(null)
 
-    // ✅ “바닥 근접” 상태 추적 (새 메시지 올 때 무조건 당기지 않도록)
+    // “바닥 근접” 상태 추적 → 새 메시지 시 강제 점프 방지
     const nearBottomRef = useRef(true)
     const NEAR_PX = 36
 
@@ -87,27 +87,12 @@ export default function ChatRoomPage(): JSX.Element {
         }
     }, [])
 
+    // ✅ 새 훅: 키보드/주소창 변동 대응(+ 드래그 체이닝 방지)
     const { setInputHeightRef, onInputBlur } = useViewportKB({
-        onStable: () => scrollToEnd('auto')
+        onStable: () => scrollToEnd('auto'),   // 레이아웃 안정 후만 자동 스크롤
+        kbThreshold: 80,                       // 80px 이상 변화만 키보드로 간주
+        blockDrag: true,                       // 입력바에서 위로 끌어올려도 상위로 새지 않도록
     })
-
-    // ✅ iOS Safari 정확한 viewport height(주소창/키보드 변동 대응)
-    useEffect(() => {
-        const setVVH = () => {
-            const vh = (window as any).visualViewport?.height ?? window.innerHeight
-            document.documentElement.style.setProperty('--vvh', `${vh}px`)
-        }
-        setVVH()
-        const vv = (window as any).visualViewport
-        vv?.addEventListener('resize', setVVH)
-        window.addEventListener('resize', setVVH)
-        window.addEventListener('orientationchange', setVVH)
-        return () => {
-            vv?.removeEventListener('resize', setVVH)
-            window.removeEventListener('resize', setVVH)
-            window.removeEventListener('orientationchange', setVVH)
-        }
-    }, [])
 
     useEffect(() => {
         const onUp = () => setConnected(true)
@@ -117,7 +102,7 @@ export default function ChatRoomPage(): JSX.Element {
         return () => { ws.offConnect(onUp); ws.offDisconnect(onDown) }
     }, [])
 
-    // 상대 라벨
+    // 상대 라벨 (members에서 나 제외)
     useEffect(() => {
         if (!roomId) return
         let cancelled = false
@@ -156,13 +141,12 @@ export default function ChatRoomPage(): JSX.Element {
         }
     }, [roomId, setActiveRoom, scrollToEnd])
 
-    // 리스트 스크롤 이벤트로 “바닥 근접” 상태 갱신
+    // 리스트 스크롤 → 바닥 근접 상태 갱신
     useEffect(() => {
         const el = listRef.current
         if (!el) return
         const onScroll = () => measureNearBottom()
         el.addEventListener('scroll', onScroll, { passive: true })
-        // 초기 측정
         measureNearBottom()
         return () => { el.removeEventListener('scroll', onScroll) }
     }, [measureNearBottom])
@@ -183,7 +167,6 @@ export default function ChatRoomPage(): JSX.Element {
                 return next
             })
 
-            // 내가 보낸 메시지거나, 현재 바닥 근처면 자동 스크롤
             const mine = sameUser(myKeys, msg)
             if (mine || nearBottomRef.current) {
                 requestAnimationFrame(() => scrollToEnd('smooth'))
@@ -193,7 +176,6 @@ export default function ChatRoomPage(): JSX.Element {
         const onVisible = () => {
             if (document.visibilityState === 'visible') {
                 ws.ensureConnected()
-                // 화면 복귀 시에도 바닥 근접 상태면 정렬
                 if (nearBottomRef.current) scrollToEnd('auto')
             }
         }
@@ -212,8 +194,8 @@ export default function ChatRoomPage(): JSX.Element {
         }
     }, [roomId, scrollToEnd, myKeys])
 
+    // 메시지 변경 → 바닥 근접이면 한 번 더 정렬
     useEffect(() => {
-        // 신규 히스토리 세팅 후에도 바닥 근접이면 한번 정렬
         if (nearBottomRef.current) scrollToEnd('auto')
     }, [messages, scrollToEnd])
 
@@ -262,7 +244,16 @@ export default function ChatRoomPage(): JSX.Element {
                 <div ref={endRef} id="chat-end-sentinel" />
             </div>
 
-            <div className="chat__input" ref={setInputHeightRef as any}>
+            {/* 입력 바: 훅이 ref로 높이를 실측하고, 키보드 시 fixed 전환됨 */}
+            <div
+                className="chat__input"
+                ref={setInputHeightRef as any}
+                onTouchMoveCapture={(e) => {
+                    // 방어적으로 한 번 더 상위 전파를 막아 iOS 체이닝 완화
+                    // (hook에서도 차단하지만 중복해도 무해)
+                    e.stopPropagation()
+                }}
+            >
                 <input
                     ref={inputRef}
                     value={text}
