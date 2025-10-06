@@ -99,7 +99,7 @@ html, body {
     overflow: auto;
 
     /* 입력바 + 여유 */
-    padding: 16px 18px calc(var(--input-h) + 32px + env(safe-area-inset-bottom, 0px));
+    padding: 16px 18px;
 
     display: flex;
     flex-direction: column;
@@ -241,7 +241,7 @@ html, body {
 
 /* ===== Small screens ===== */
 @media (max-width: 640px) {
-    .chat__list { padding: 12px 12px calc(var(--input-h) + 24px + env(safe-area-inset-bottom, 0px)); }
+    .chat__list { padding: 12px 12px }
     .chat__bubble { font-size: 14px; }
     .chat__header { padding: 12px; }
 }

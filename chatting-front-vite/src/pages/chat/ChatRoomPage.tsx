@@ -63,35 +63,50 @@ export default function ChatRoomPage(): JSX.Element {
     const [connected, setConnected] = useState<boolean>(ws.isConnected())
 
     const listRef = useRef<HTMLDivElement | null>(null)
-    const endRef = useRef<HTMLDivElement | null>(null)
+    const endRef = useRef<HTMLDivElement | null>(null) // 남겨두지만 직접 scroll을 우선 사용
     const inputRef = useRef<HTMLInputElement | null>(null)
 
-    // “바닥 근접” 상태 추적 → 새 메시지 시 강제 점프 방지
+    // “바닥 근접” 상태 추적 → 새 메시지 시 강제 점프 조건
     const nearBottomRef = useRef(true)
     const NEAR_PX = 36
 
     const measureNearBottom = useCallback(() => {
-        const el = listRef.current
-        if (!el) { nearBottomRef.current = true; return }
-        const diff = el.scrollHeight - el.scrollTop - el.clientHeight
-        nearBottomRef.current = diff <= NEAR_PX
+        const list = listRef.current as HTMLDivElement | null
+        if (!list) { nearBottomRef.current = true; return true }
+        const diff = list.scrollHeight - list.scrollTop - list.clientHeight
+        const near = diff <= NEAR_PX
+        nearBottomRef.current = near
+        return near
     }, [])
 
-    const scrollToEnd = useCallback((behavior: ScrollBehavior = 'auto') => {
-        const el = endRef.current
-        if (!el) return
-        try { el.scrollIntoView({ behavior, block: 'end' }) }
-        catch {
-            const list = listRef.current
-            if (list) list.scrollTop = list.scrollHeight
+    // ✅ 컨테이너 직접 스크롤 방식 (iOS fixed+sticky 조합에서도 안정)
+    const scrollToBottom = useCallback((behavior: ScrollBehavior = 'auto') => {
+        const list = listRef.current as HTMLDivElement | null
+        if (!list) return
+
+        // 안전한 함수 체크 (in 연산자 X)
+        const scrollToFn = (list as any).scrollTo as
+            | ((opts: ScrollToOptions) => void)
+            | undefined
+
+        const top = list.scrollHeight
+
+        if (typeof scrollToFn === 'function') {
+            // call로 this 바인딩 명시
+            scrollToFn.call(list, { top, behavior })
+        } else {
+            // fallback
+            ;(list as HTMLDivElement).scrollTop = top
         }
     }, [])
 
-    // ✅ 새 훅: 키보드/주소창 변동 대응(+ 드래그 체이닝 방지)
     const { setInputHeightRef, onInputBlur } = useViewportKB({
-        onStable: () => scrollToEnd('auto'),   // 레이아웃 안정 후만 자동 스크롤
-        kbThreshold: 80,                       // 80px 이상 변화만 키보드로 간주
-        blockDrag: true,                       // 입력바에서 위로 끌어올려도 상위로 새지 않도록
+        onStable: () => {
+            // 레이아웃 안정 후: 사용자가 바닥 근처였으면 유지
+            if (nearBottomRef.current) scrollToBottom('auto')
+        },
+        kbThreshold: 80,
+        blockDrag: true,
     })
 
     useEffect(() => {
@@ -132,14 +147,17 @@ export default function ChatRoomPage(): JSX.Element {
                 const list = (Array.isArray(res.data) ? res.data : []).map(normalize)
                 list.sort((a, b) => toMillis(a.createdAt) - toMillis(b.createdAt))
                 setMessages(list)
-                requestAnimationFrame(() => scrollToEnd('auto'))
+                requestAnimationFrame(() => {
+                    measureNearBottom() // 초기엔 항상 true가 되도록
+                    scrollToBottom('auto')
+                })
             } catch {}
         })()
         return () => {
             cancelled = true
             ;(async () => { try { await RoomsAPI.markRead(roomId) } catch {} })()
         }
-    }, [roomId, setActiveRoom, scrollToEnd])
+    }, [roomId, setActiveRoom, scrollToBottom, measureNearBottom])
 
     // 리스트 스크롤 → 바닥 근접 상태 갱신
     useEffect(() => {
@@ -160,7 +178,10 @@ export default function ChatRoomPage(): JSX.Element {
         setConnected(ws.isConnected())
 
         const unsub = ws.subscribe(`/topic/rooms/${roomId}`, (payload: MessageDto) => {
+            // 👇 메시지 추가 "이전"의 바닥 근접 여부를 기준으로 유지
+            const wasNearBottom = measureNearBottom()
             const msg = normalize(payload)
+
             setMessages((prev) => {
                 if (msg.id && prev.some((p) => p.id === msg.id)) return prev
                 const next = [...prev, msg].sort((a, b) => toMillis(a.createdAt) - toMillis(b.createdAt))
@@ -168,15 +189,21 @@ export default function ChatRoomPage(): JSX.Element {
             })
 
             const mine = sameUser(myKeys, msg)
-            if (mine || nearBottomRef.current) {
-                requestAnimationFrame(() => scrollToEnd('smooth'))
-            }
+
+            // DOM 반영 후 두 번의 rAF로 안정적으로 스크롤 (iOS에서 paint 이후 보장)
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    if (mine || wasNearBottom) {
+                        scrollToBottom('smooth')
+                    }
+                })
+            })
         })
 
         const onVisible = () => {
             if (document.visibilityState === 'visible') {
                 ws.ensureConnected()
-                if (nearBottomRef.current) scrollToEnd('auto')
+                if (nearBottomRef.current) scrollToBottom('auto')
             }
         }
         const onOnline = () => { ws.ensureConnected() }
@@ -192,12 +219,12 @@ export default function ChatRoomPage(): JSX.Element {
             window.removeEventListener('online', onOnline as any)
             window.removeEventListener('pageshow', onOnline as any)
         }
-    }, [roomId, scrollToEnd, myKeys])
+    }, [roomId, scrollToBottom, myKeys, measureNearBottom])
 
-    // 메시지 변경 → 바닥 근접이면 한 번 더 정렬
+    // 메시지 변경 → 내가 보낸 뒤에는 항상 바닥, 그 외에는 nearBottom이면 유지
     useEffect(() => {
-        if (nearBottomRef.current) scrollToEnd('auto')
-    }, [messages, scrollToEnd])
+        if (nearBottomRef.current) scrollToBottom('auto')
+    }, [messages, scrollToBottom])
 
     const send = useCallback(async () => {
         const body = text.trim()
@@ -207,9 +234,9 @@ export default function ChatRoomPage(): JSX.Element {
             setText('')
             inputRef.current?.focus({ preventScroll: true })
             // 내가 보낸 메시지는 항상 아래로
-            setTimeout(() => scrollToEnd('smooth'), 10)
+            setTimeout(() => scrollToBottom('smooth'), 10)
         } catch {}
-    }, [roomId, text, scrollToEnd])
+    }, [roomId, text, scrollToBottom])
 
     const handleKeyDown: React.KeyboardEventHandler<HTMLInputElement> = (e) => {
         const composing = (e as any).isComposing || (e.nativeEvent as any)?.isComposing
@@ -250,7 +277,6 @@ export default function ChatRoomPage(): JSX.Element {
                 ref={setInputHeightRef as any}
                 onTouchMoveCapture={(e) => {
                     // 방어적으로 한 번 더 상위 전파를 막아 iOS 체이닝 완화
-                    // (hook에서도 차단하지만 중복해도 무해)
                     e.stopPropagation()
                 }}
             >
