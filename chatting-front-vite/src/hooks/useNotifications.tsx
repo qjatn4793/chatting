@@ -1,14 +1,16 @@
-import React, {
+// src/hooks/useNotifications.ts
+import {
     createContext,
     useContext,
     useEffect,
     useMemo,
     useRef,
     useState,
+    useCallback,
 } from 'react'
 import { useLocation } from 'react-router-dom'
 import http from '@/api/http'
-import { ws } from '@/ws'
+import { ws } from '@/lib/ws'
 import { useAuth } from '@/context/AuthContext'
 
 /**
@@ -30,6 +32,12 @@ export type ChatNotify =
     messageId?: string
     id?: string
     uuid?: string
+    content?: string
+    message?: string
+    text?: string
+    preview?: string
+    createdAt?: string | number
+    time?: string | number
 }
     | any
 
@@ -39,6 +47,8 @@ type Ctx = {
     getUnreadByRoom: (roomId: string) => number
     resetUnread: (roomId: string) => void
     setActiveRoom: (roomId?: string) => void
+    /** ✅ 현재 활성 방(roomId)을 읽기 — 리렌더 없이도 최신값을 돌려줌 */
+    getActiveRoom: () => string | undefined
     /** ✅ 외부(RealtimeProvider)에서 WS 수신 시 호출할 엔트리포인트 */
     pushNotif: (n: ChatNotify) => void
 }
@@ -287,6 +297,11 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
         }
     }
 
+    // ✅ 현재 활성 방을 읽는 함수(리렌더 없이 최신값 반환)
+    const getActiveRoom = useCallback((): string | undefined => {
+        return activeRoomRef.current
+    }, [])
+
     // 페이지 가시화 시 현재 방 읽음 처리
     useEffect(() => {
         const onVis = () => {
@@ -357,9 +372,10 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
             getUnreadByRoom,
             resetUnread,
             setActiveRoom,
-            pushNotif, // ✅ 컨텍스트에 노출
+            getActiveRoom,   // ✅ 노출
+            pushNotif,       // ✅ 노출
         }),
-        [unread, pushNotif]
+        [unread, getActiveRoom, pushNotif]
     )
 
     return (

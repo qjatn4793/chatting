@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import ReactDOM from 'react-dom'
-import { ws } from '@/ws'
+import { ws } from '@/lib/ws'
 import RequestsPanel from './RequestsPanel'
 
 function BellIcon({ filled = false }: { filled?: boolean }) {

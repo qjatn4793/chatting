@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useMemo, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { getUserUuidFromToken, getEmailFromToken, getNameFromToken } from '@/utils/jwt'
-import { ws } from '@/ws'
+import { getUserUuidFromToken, getEmailFromToken, getNameFromToken } from '@/lib/jwt'
+import { ws } from '@/lib/ws'
 
 type AuthCtx = {
     token: string | null

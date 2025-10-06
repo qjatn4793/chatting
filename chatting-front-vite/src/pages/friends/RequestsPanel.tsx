@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import http from '@/api/http'
 import { useAuth } from '@/context/AuthContext'
-import { ws } from '@/ws'
+import { ws } from '@/lib/ws'
 
 type Req = {
     id: string | number

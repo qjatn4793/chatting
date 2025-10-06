@@ -1,4 +1,4 @@
-// utils/jwt.ts
+// lib/jwt.ts
 export type JwtClaims = {
     sub?: string;       // UUID
     email?: string;     // 이메일

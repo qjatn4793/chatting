@@ -5,7 +5,7 @@ import { useAuth } from '@/context/AuthContext'
 import { useNotifications } from '@/hooks/useNotifications'
 import NotificationsBell from '@/pages/friends/NotificationsBell'
 import http from '@/api/http'
-import { ws } from '@/ws'
+import { ws } from '@/lib/ws'
 
 type Room = { id: string }
 
