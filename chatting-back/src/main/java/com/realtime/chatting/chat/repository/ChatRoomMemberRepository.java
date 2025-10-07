@@ -77,4 +77,23 @@ public interface ChatRoomMemberRepository extends JpaRepository<ChatRoomMember, 
               and m.user.id = :meId
            """)
     Optional<String> findDmPeerId(@Param("roomId") String roomId, @Param("meId") UUID meId);
+
+    // 방 기준 미읽음 요약
+    @Query(value = """
+    SELECT rm.room_id AS roomId,
+           SUM(rm.unread_count) AS count
+    FROM chat_room_members rm
+    WHERE rm.user_id = :userId
+      AND rm.unread_count > 0
+    GROUP BY rm.room_id
+    """, nativeQuery = true)
+    List<UnreadRoomProjection> findUnreadPerRoom(@Param("userId") UUID userId);
+
+    interface UnreadRoomProjection {
+        UUID getRoomId();
+        Long getCount();
+    }
+
+    @Query("select rm.room.id from ChatRoomMember rm where rm.user.id = :userId and rm.room.id in :roomIds")
+    List<String> findAuthorizedRoomIds(@Param("userId") UUID userId, @Param("roomIds") List<String> roomIds);
 }

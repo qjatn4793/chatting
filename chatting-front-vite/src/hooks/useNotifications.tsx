@@ -1,4 +1,4 @@
-// src/hooks/useNotifications.ts
+// src/hooks/useNotifications.tsx
 import {
     createContext,
     useContext,
@@ -12,21 +12,19 @@ import { useLocation } from 'react-router-dom'
 import http from '@/api/http'
 import { ws } from '@/lib/ws'
 import { useAuth } from '@/context/AuthContext'
+import { previewCache } from '@/lib/previewCache'
+import { RoomsAPI, MessageDto } from '@/api/rooms'
 
-/**
- * 서버가 사용자 개인 큐(/topic/chat-notify/{userId} 등)로 보내주는 알림 payload 예시를
- * 유연하게 수용하기 위한 타입. 다양한 키를 다 받아들일 수 있게 넉넉하게 잡는다.
- */
 export type ChatNotify =
     | {
-    type?: string // 'MESSAGE' | 'UNREAD_INC' | 'UNREAD_SET' 등 자유
+    type?: string
     roomId?: string
     room_id?: string
     room?: string
     senderUserId?: string
     sender?: string
     email?: string
-    count?: number // 절대값 or 증분값이 들어올 수 있음
+    count?: number
     unread?: number
     delta?: number
     messageId?: string
@@ -38,31 +36,30 @@ export type ChatNotify =
     preview?: string
     createdAt?: string | number
     time?: string | number
+    username?: string
+    senderName?: string
 }
     | any
 
 type Ctx = {
-    /** 컨텍스트 상태를 직접 노출 — 변경 시 소비자 리렌더 보장 */
     unread: Record<string, number>
     getUnreadByRoom: (roomId: string) => number
     resetUnread: (roomId: string) => void
     setActiveRoom: (roomId?: string) => void
-    /** 현재 활성 방(roomId)을 읽기 — 리렌더 없이도 최신값을 돌려줌 */
     getActiveRoom: () => string | undefined
-    /** 외부(RealtimeProvider)에서 WS 수신 시 호출할 엔트리포인트 */
     pushNotif: (n: ChatNotify) => void
+    refreshUnreadFromServer: () => Promise<void>
 }
 
 const NotificationsContext = createContext<Ctx | null>(null)
+
 const LS_KEY = 'unreadCounts:v1'
-const SERVER_UNREAD_ENDPOINT = '/unread/summary' // => /api/unread/summary
-const ROOMS_ENDPOINT = '/rooms' // => /api/rooms
+const SERVER_UNREAD_ENDPOINT = '/unread/summary'
+const ROOMS_ENDPOINT = '/rooms'
 
-// 프로젝트에 따라 방 토픽(/topic/room.{id})를 따로 구독할 수도 있음.
-// 지금은 RealtimeProvider가 per-user notify를 밀어주므로 중복증분을 피하려고 false.
-const ENABLE_ROOM_TOPIC_SUBSCRIBE = false
+// 전역으로 방 토픽을 "미리보기 캐시 업데이트 전용"으로 구독할지
+const ENABLE_GLOBAL_ROOM_PREVIEW_SUBSCRIBE = true
 
-// 구독 반환형이 함수/객체 어떤 것이든 통일 clean-up
 function toCleanup(x: any): () => void {
     if (!x) return () => {}
     if (typeof x === 'function') return x
@@ -70,7 +67,6 @@ function toCleanup(x: any): () => void {
     return () => {}
 }
 
-// 메시지/알림에서 발신자 추출
 function pickSender(msg: any): string | undefined {
     const cand =
         msg?.senderEmail ?? msg?.email ?? msg?.sender ?? msg?.from ?? msg?.user
@@ -79,28 +75,61 @@ function pickSender(msg: any): string | undefined {
     return s || undefined
 }
 
-// 메시지 id (중복 방지용)
 function pickMsgId(msg: any): string | undefined {
     const cand = msg?.id ?? msg?.messageId ?? msg?.uuid
     return cand ? String(cand) : undefined
 }
 
-// payload에서 roomId 유연히 뽑기
 function pickRoomId(obj: any): string | undefined {
     const cand = obj?.roomId ?? obj?.room_id ?? obj?.room ?? obj?.id
     return cand == null ? undefined : String(cand)
 }
 
+const toMillis = (v: any): number => {
+    if (v === null || v === undefined) return Date.now()
+    if (typeof v === 'number') return v
+    const t = Date.parse(String(v))
+    return Number.isNaN(t) ? Date.now() : t
+}
+
+function chunk<T>(arr: T[], size: number): T[][] {
+    if (size <= 0) return [arr]
+    const out: T[][] = []
+    for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size))
+    return out
+}
+
+/** 메시지/알림 payload → 미리보기 캐시에 넣기 위한 공통 정규화 */
+function normalizeForPreview(raw: any): {
+    roomId?: string
+    content?: string
+    createdAt?: number
+    username?: string
+} {
+    const roomId = pickRoomId(raw)
+    const body =
+        raw?.content ?? raw?.message ?? raw?.text ?? raw?.preview ?? undefined
+    const createdAt = toMillis(raw?.createdAt ?? raw?.time)
+    const username =
+        raw?.username ?? raw?.senderName ?? raw?.sender ?? raw?.email ?? undefined
+
+    return {
+        roomId: roomId ? String(roomId) : undefined,
+        content: body != null ? String(body) : undefined,
+        createdAt,
+        username: username != null ? String(username) : undefined,
+    }
+}
+
 export function NotificationsProvider({ children }: { children: React.ReactNode }) {
     const { user, isAuthed } = useAuth() as any
     const location = useLocation()
-    const onAuthPage = location.pathname === '/login' // 로그인 페이지 감지
+    const onAuthPage = location.pathname === '/login'
 
-    // meKey는 이메일 우선 (서버에서 sender=email로 보낼 가능성高)
     const meKey = useMemo(() => {
         const cand =
             user?.email ??
-            user?.username ?? // fallback
+            user?.username ??
             user?.id ??
             user?.userId ??
             user?.uuid ??
@@ -120,50 +149,10 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
     const activeRoomRef = useRef<string | undefined>(undefined)
     const recentMsgIds = useRef<Set<string>>(new Set())
 
-    // 방별 구독 레지스트리: roomId -> cleanup
-    const roomSubsRef = useRef<Map<string, () => void>>(new Map())
-
-    // 초기 미확인 요약 동기화: 인증 전/로그인 페이지에서는 건너뜀
-    useEffect(() => {
-        if (!isAuthed || onAuthPage) return
-            ;(async () => {
-            try {
-                const res = await http.get(SERVER_UNREAD_ENDPOINT) // [{ roomId, count }]
-                if (Array.isArray(res.data)) {
-                    const merged = { ...unread }
-                    for (const row of res.data) {
-                        const rid = row?.roomId ?? row?.room_id ?? row?.id ?? row?.room
-                        if (rid != null) {
-                            merged[String(rid)] = Number(row?.count ?? row?.unread ?? row?.unreadCount ?? 0)
-                        }
-                    }
-                    persist(merged)
-                }
-            } catch {
-                // 서버 미구현/권한 문제는 무시
-            }
-        })()
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [isAuthed, onAuthPage])
-
-    // 내 방 목록 조회: 인증 전/로그인 페이지에서는 건너뜀
-    useEffect(() => {
-        if (!isAuthed || onAuthPage) return
-            ;(async () => {
-            try {
-                const res = await http.get(ROOMS_ENDPOINT)
-                const arr = Array.isArray(res.data) ? res.data : []
-                const list: Array<{ id: string }> = []
-                for (const r of arr) {
-                    if (!r?.id) continue
-                    list.push({ id: String(r.id) })
-                }
-                setRooms(list)
-            } catch (e) {
-                console.warn('[useNotifications] /rooms fetch failed', e)
-            }
-        })()
-    }, [isAuthed, onAuthPage])
+    // 전역 방 토픽(미리보기 전용) 구독 레지스트리
+    const previewRoomSubsRef = useRef<Map<string, () => void>>(new Map())
+    // 로그인 직후 벌크 미리보기 프라이밍(one-shot)
+    const primedRef = useRef(false)
 
     // 라우트 기준 활성 방 설정
     useEffect(() => {
@@ -178,7 +167,6 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
         } catch {}
     }
 
-    // 공용 증분/세팅 헬퍼
     const applyDelta = (roomId: string, delta: number) => {
         setUnread((prev) => {
             const next = { ...prev, [roomId]: Math.max(0, (prev[roomId] || 0) + delta) }
@@ -198,33 +186,35 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
         })
     }
 
-    // 초기 미확인 요약 동기화
-    useEffect(() => {
-        ;(async () => {
-            try {
-                const res = await http.get(SERVER_UNREAD_ENDPOINT) // [{ roomId, count }]
-                if (Array.isArray(res.data)) {
-                    const merged = { ...unread }
-                    for (const row of res.data) {
-                        const rid =
-                            row?.roomId ?? row?.room_id ?? row?.id ?? row?.room
-                        if (rid != null)
-                            merged[String(rid)] = Number(
-                                row?.count ?? row?.unread ?? row?.unreadCount ?? 0
-                            )
+    const refreshUnreadFromServer = useCallback(async () => {
+        try {
+            const res = await http.get(SERVER_UNREAD_ENDPOINT)
+            if (Array.isArray(res.data)) {
+                const merged: Record<string, number> = {}
+                for (const row of res.data) {
+                    const rid = row?.roomId ?? row?.room_id ?? row?.id ?? row?.room
+                    if (rid != null) {
+                        merged[String(rid)] = Number(
+                            row?.count ?? row?.unread ?? row?.unreadCount ?? 0
+                        )
                     }
-                    persist(merged)
                 }
-            } catch {
-                // 서버 미구현/권한 문제는 무시 (WS notify로도 증분 동작)
+                persist(merged)
             }
-        })()
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+        } catch {
+            // ignore
+        }
     }, [])
 
-    // 내 방 목록 (roomId 리스트 확보 — 선택)
     useEffect(() => {
-        ;(async () => {
+        if (!isAuthed || onAuthPage) return
+        void refreshUnreadFromServer()
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isAuthed, onAuthPage])
+
+    useEffect(() => {
+        if (!isAuthed || onAuthPage) return
+            ;(async () => {
             try {
                 const res = await http.get(ROOMS_ENDPOINT)
                 const arr = Array.isArray(res.data) ? res.data : []
@@ -238,72 +228,7 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
                 console.warn('[useNotifications] /rooms fetch failed', e)
             }
         })()
-    }, [])
-
-    // (옵션) 방 토픽 구독 — 현재는 per-user notify가 있으므로 끔.
-    useEffect(() => {
-        if (!ENABLE_ROOM_TOPIC_SUBSCRIBE) return
-
-        const subs = roomSubsRef.current
-
-        // 1) 이미 구독 중인데 목록에 없는 방 → 해제
-        for (const [rid, cleanup] of subs) {
-            if (!rooms.some((r) => r.id === rid)) {
-                cleanup()
-                subs.delete(rid)
-            }
-        }
-
-        // 2) 새 방 → 구독 추가
-        for (const r of rooms) {
-            if (subs.has(r.id)) continue
-
-            try {
-                const sub = ws.subscribe(`/topic/room.${r.id}`, (payload: any) => {
-                    try {
-                        const msg =
-                            typeof payload === 'string' ? JSON.parse(payload) : payload
-
-                        // 중복 방지
-                        const mid = pickMsgId(msg) || `${r.id}:${Date.now()}`
-                        if (recentMsgIds.current.has(mid)) return
-                        recentMsgIds.current.add(mid)
-                        if (recentMsgIds.current.size > 1000) {
-                            recentMsgIds.current = new Set(
-                                Array.from(recentMsgIds.current).slice(-400)
-                            )
-                        }
-
-                        // 내 메시지는 제외
-                        const sender = pickSender(msg)
-                        if (meKey && sender === meKey) return
-
-                        // 활성 방이면 증가 X (읽음 처리 트리거는 ChatRoomPage에서)
-                        if (activeRoomRef.current === r.id) return
-
-                        applyDelta(r.id, 1)
-                    } catch (err) {
-                        console.error(
-                            '[useNotifications] room message parse error:',
-                            err,
-                            payload
-                        )
-                    }
-                })
-                const cleanup = toCleanup(sub)
-                subs.set(r.id, cleanup)
-            } catch (e) {
-                console.error('[useNotifications] subscribe failed for room', r.id, e)
-            }
-        }
-
-        return () => {
-            // 컴포넌트 언마운트 시 전체 해제
-            for (const [, cleanup] of subs) cleanup()
-            subs.clear()
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [rooms, meKey])
+    }, [isAuthed, onAuthPage])
 
     function getUnreadByRoom(roomId: string): number {
         return unread[roomId] || 0
@@ -326,25 +251,20 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
         try {
             await http.post(`/rooms/${roomId}/read`, { lastMessageId })
         } catch {
-            // 서버 반영 실패해도 로컬은 0으로
+            // ignore
         }
         resetUnread(roomId)
     }
 
     function setActiveRoom(roomId?: string) {
         activeRoomRef.current = roomId
-        if (roomId) {
-            // 활성화 직후 바로 0으로 (서버 커서 반영은 ChatRoomPage에서 메시지 렌더 후 트리거)
-            resetUnread(roomId)
-        }
+        if (roomId) resetUnread(roomId)
     }
 
-    // 현재 활성 방을 읽는 함수(리렌더 없이 최신값 반환)
     const getActiveRoom = useCallback((): string | undefined => {
         return activeRoomRef.current
     }, [])
 
-    // 페이지 가시화 시 현재 방 읽음 처리
     useEffect(() => {
         const onVis = () => {
             if (document.visibilityState === 'visible' && activeRoomRef.current) {
@@ -355,17 +275,12 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
         return () => document.removeEventListener('visibilitychange', onVis)
     }, [])
 
-    /**
-     * RealtimeProvider에서 WS로 받은 알림을 주입하는 엔트리
-     * 다양한 payload를 방어적으로 처리한다.
-     */
     const pushNotif = (n: ChatNotify) => {
         try {
             const type = (n?.type || '').toString().toUpperCase()
             const roomId = pickRoomId(n)
             if (!roomId) return
 
-            // 내가 보낸 거면 무시 (senderUserId 또는 sender/email 중 하나로 매칭)
             const sender =
                 n?.senderUserId ??
                 n?.sender ??
@@ -374,16 +289,13 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
                 n?.user
             if (meKey && sender && String(sender).trim() === meKey) return
 
-            // 현재 보고 있는 방이면 증가하지 않음 (원한다면 즉시 markRead도 가능)
             if (activeRoomRef.current === roomId) return
 
-            // 우선순위: 절대값 → delta/count → 기본 +1
             if (typeof n?.unread === 'number') {
                 applyAbsolute(roomId, n.unread)
                 return
             }
             if (typeof n?.count === 'number') {
-                // count를 delta로 보내는 서버도 있으니 음수/양수 모두 수용
                 applyDelta(roomId, n.count)
                 return
             }
@@ -392,7 +304,6 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
                 return
             }
 
-            // 타입 힌트 기반 (필요시 더 늘려도 OK)
             switch (type) {
                 case 'UNREAD_SET':
                     applyAbsolute(roomId, Number(n?.value ?? 0))
@@ -408,16 +319,140 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
         }
     }
 
+    /** ✅ 전역: 개인 토픽/유저 큐 → previewCache 업데이트 + pushNotif */
+    useEffect(() => {
+        if (!isAuthed) return
+
+        const userUuid =
+            user?.id ?? user?.userId ?? user?.uuid ?? user?.uid ?? user?.userUUID
+        if (!userUuid) return
+
+        const onIncoming = (payload: any) => {
+            try {
+                const norm = normalizeForPreview(payload)
+                if (norm.roomId && norm.content) {
+                    previewCache.set(norm.roomId, {
+                        preview: norm.content,
+                        at: norm.createdAt!,
+                        dmPeer: norm.username as any,
+                    })
+                    try { localStorage.setItem('preview-bump', String(Date.now())) } catch {}
+                }
+            } catch {
+                /* ignore */
+            }
+            // 카운트는 기존대로
+            pushNotif(payload)
+        }
+
+        const un1 = toCleanup(ws.subscribe(`/topic/messages/${userUuid}`, onIncoming))
+        const un2 = toCleanup(ws.subscribe(`/user/queue/messages`, onIncoming))
+        try { ws.ensureConnected() } catch {}
+
+        return () => {
+            un1()
+            un2()
+        }
+    }, [isAuthed, user, pushNotif])
+
+    /** ✅ 로그인 직후 1회: 모든 방의 마지막 메시지를 벌크로 받아 previewCache 프라이밍 */
+    useEffect(() => {
+        if (!isAuthed || onAuthPage) return
+        if (primedRef.current) return
+        if (!rooms || rooms.length === 0) return
+
+        primedRef.current = true
+        const ac = new AbortController()
+
+        ;(async () => {
+            try {
+                const ids = rooms.map(r => r.id)
+                // URL 길이/서버 로드 고려해 배치 호출
+                for (const batch of chunk(ids, 80)) {
+                    try {
+                        const resp = await RoomsAPI.lastMessagesBulk(batch, { signal: ac.signal })
+                        const arr: MessageDto[] = Array.isArray(resp.data) ? resp.data : []
+                        for (const raw of arr) {
+                            const norm = normalizeForPreview(raw)
+                            if (norm.roomId && norm.content) {
+                                previewCache.set(norm.roomId, {
+                                    preview: norm.content,
+                                    at: norm.createdAt!,
+                                    dmPeer: norm.username as any,
+                                })
+                            }
+                        }
+                    } catch {
+                        // 배치 하나 실패는 무시(다음 배치/WS/개별 조회로 보완)
+                    }
+                }
+                try { localStorage.setItem('preview-bump', String(Date.now())) } catch {}
+            } catch {
+                // ignore
+            }
+        })()
+
+        return () => ac.abort()
+    }, [isAuthed, onAuthPage, rooms])
+
+    /** (옵션) ✅ 전역: 방 토픽을 "캐시 업데이트 전용"으로 구독 — 미리보기만 갱신 */
+    useEffect(() => {
+        if (!ENABLE_GLOBAL_ROOM_PREVIEW_SUBSCRIBE) return
+        if (!isAuthed || rooms.length === 0) return
+
+        const subs = previewRoomSubsRef.current
+
+        for (const [rid, cleanup] of subs) {
+            if (!rooms.some((r) => r.id === rid)) {
+                cleanup()
+                subs.delete(rid)
+            }
+        }
+
+        for (const r of rooms) {
+            if (subs.has(r.id)) continue
+
+            try {
+                const sub = ws.subscribe(`/topic/rooms/${r.id}`, (payload: any) => {
+                    try {
+                        const norm = normalizeForPreview(payload)
+                        if (norm.roomId && norm.content) {
+                            previewCache.set(norm.roomId, {
+                                preview: norm.content,
+                                at: norm.createdAt!,
+                                dmPeer: norm.username as any,
+                            })
+                            try { localStorage.setItem('preview-bump', String(Date.now())) } catch {}
+                        }
+                        // 미읽음 카운트는 여기서 건드리지 않음(개인 토픽으로만 처리)
+                    } catch {
+                        /* ignore */
+                    }
+                })
+                const cleanup = toCleanup(sub)
+                subs.set(r.id, cleanup)
+            } catch {
+                /* ignore */
+            }
+        }
+
+        return () => {
+            for (const [, cleanup] of subs) cleanup()
+            subs.clear()
+        }
+    }, [isAuthed, rooms])
+
     const value = useMemo<Ctx>(
         () => ({
             unread,
             getUnreadByRoom,
             resetUnread,
             setActiveRoom,
-            getActiveRoom,   // 노출
-            pushNotif,       // 노출
+            getActiveRoom,
+            pushNotif,
+            refreshUnreadFromServer,
         }),
-        [unread, getActiveRoom, pushNotif]
+        [unread, getActiveRoom, pushNotif, refreshUnreadFromServer]
     )
 
     return (

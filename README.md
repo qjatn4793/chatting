@@ -137,6 +137,15 @@ JWT 기반 인증과 WebSocket(STOMP)을 사용하여 실시간 메시징을 구
     ./gradlew build
 ```
 
+### db index 추가 항목들
+-- messages: 방/시간 순회
+CREATE INDEX idx_msg_room_created     ON chat_messages (room_id, created_at);
+-- messages: "내 메시지 제외" + 시간
+CREATE INDEX idx_msg_room_sender_time ON chat_messages (room_id, sender, created_at);
+-- room_members: 조인/PK
+CREATE INDEX idx_rm_user              ON chat_room_members (user_id);
+CREATE INDEX idx_rm_room              ON chat_room_members (room_id);
+
 ### 해야할것들
 1. 대화방 메세지 읽음 처리
 2. 그룹 대화방 기능 추가

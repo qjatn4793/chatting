@@ -24,7 +24,7 @@ export type InviteRequest = {
 }
 
 export type InviteResponse = {
-    invited: string[]        // 성공적으로 초대된 식별자
+    invited: string[]         // 성공적으로 초대된 식별자
     alreadyMembers?: string[] // 이미 멤버였던 식별자
     notFound?: string[]       // 매칭 실패
     failed?: string[]         // 서버 에러 등
@@ -61,4 +61,20 @@ export const RoomsAPI = {
         http.get<RoomDto>(`/rooms/${encodeURIComponent(roomId)}`, {
             signal: opts?.signal as any,
         }),
+
+    /**
+     * ✅ 벌크 최신 메시지 조회
+     * GET /api/rooms/last-messages?roomIds=a&roomIds=b&...
+     * - roomIds: 최신 1건을 받고 싶은 방 ID 배열
+     * - 백엔드 응답 타입은 MessageDto[] (각 element는 해당 room의 최신 메시지)
+     */
+    lastMessagesBulk: (roomIds: string[], opts?: { signal?: AbortSignal }) => {
+        const qs =
+            Array.isArray(roomIds) && roomIds.length > 0
+                ? `?${roomIds.map((id) => `roomIds=${encodeURIComponent(id)}`).join('&')}`
+                : ''
+        return http.get<MessageDto[]>(`/rooms/last-messages${qs}`, {
+            signal: opts?.signal as any,
+        })
+    },
 }

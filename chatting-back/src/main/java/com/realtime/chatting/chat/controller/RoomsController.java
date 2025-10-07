@@ -1,7 +1,9 @@
 package com.realtime.chatting.chat.controller;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import com.realtime.chatting.chat.dto.OpenDmByIdentifierRequest;
 import com.realtime.chatting.chat.service.MessageService;
@@ -96,5 +98,36 @@ public class RoomsController {
         rabbitTemplate.convertAndSend(RabbitConfig.CHAT_EXCHANGE, routingKey, saved);
 
         return saved;
+    }
+
+    /**
+     * 벌크 최신 메시지 API
+     * GET /api/rooms/last-messages?roomIds=a,b,c
+     * - 인증 사용자가 구성원인 방만 응답
+     * - 각 방당 최신 1건(MessageDto)
+     */
+    @GetMapping("/last-messages")
+    public List<MessageDto> lastMessages(@RequestParam("roomIds") String roomIdsCsv,
+                                         Authentication auth) {
+        if (roomIdsCsv == null || roomIdsCsv.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "roomIds is required");
+        }
+
+        // roomIds 파싱 + 중복 제거 + 최대 개수 제한(예: 500)
+        List<String> roomIds = Arrays.stream(roomIdsCsv.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .distinct()
+                .limit(500)
+                .collect(Collectors.toList());
+
+        UUID myId;
+        try {
+            myId = UUID.fromString(auth.getName());
+        } catch (Exception e) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "invalid principal");
+        }
+
+        return messageService.lastMessagesBulk(myId, roomIds);
     }
 }
