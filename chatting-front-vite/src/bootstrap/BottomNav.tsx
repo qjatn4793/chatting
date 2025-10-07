@@ -3,7 +3,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
 import { useNotifications } from '@/hooks/useNotifications'
-import NotificationsBell from '@/pages/friends/NotificationsBell'
 import http from '@/api/http'
 import { ws } from '@/lib/ws'
 

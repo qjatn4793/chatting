@@ -1,29 +1,33 @@
 :root {
     --app-bg: #f6f7fb;
-    --bottomnav-h: 64px;  /* ✅ 하단 바 높이 */
+    --bottomnav-h: 64px;  /* 하단 바 높이 */
     --topbar-h: 56px;     /* 상단 바 높이 */
+    --sidebar-w: 240px;   /* 사이드바 너비 (데스크톱) */
 }
 
+/* ===== 레이아웃 기본: 모바일/태블릿(좁은 화면) ===== */
 .app {
-    /* 단일 컬럼 레이아웃로 변경 (사이드바 제거) */
     display: grid;
-    grid-template-columns: 1fr;
-    /*min-height: 100vh;*/
-    /*background: var(--app-bg, #f6f7fb);*/
+    grid-template-columns: 1fr;          /* 모바일 기본: 단일 컬럼 */
+    grid-template-rows: 1fr;            /* 콘텐츠만 */
+    min-height: 100vh;
+    background: var(--app-bg, #f6f7fb);
+    position: relative;                  /* BottomNav fixed 기준 */
 }
 
-/* (선택) /chat/:roomId 같은 디테일 화면에서 한 칼럼을 강제하고 싶을 때 사용 */
-.app.app--noside {
+/* 상세 화면(채팅 room): 모바일에선 사이드가 없으므로 단일 컬럼 유지 */
+.app.app--detail {
     grid-template-columns: 1fr;
 }
 
-/* Main area */
+/* 메인 영역(모바일/태블릿) */
 .app__main {
     display: grid;
     grid-template-rows: var(--topbar-h) 1fr;
     min-width: 0;
 }
 
+/* 상단 바 */
 .app__topbar {
     display: flex;
     align-items: center;
@@ -34,20 +38,24 @@
     height: var(--topbar-h);
 }
 
-/* ChatRoomPage가 헤더 높이 측정 시 사용하는 클래스(삭제 금지) */
-.app-shell__header { }
+/* ChatRoomPage가 헤더 높이 측정 시 사용하는 클래스 */
+.app-shell__header {}
 
 .app__topbar__left { display: flex; align-items: center; gap: 8px; }
 .app__topbar__right { display: flex; align-items: center; gap: 8px; }
 
-/* 본문: 하단 바에 가리지 않도록 패딩 확보 */
-/*.app__content {*/
-/*    padding: 16px;*/
-/*    min-width: 0;*/
-/*    padding-bottom: calc(var(--bottomnav-h) + 12px);*/
-/*}*/
+/* 본문(모바일/태블릿): bottomnav에 가리지 않게 패딩 */
+.app__content {
+    padding: 16px;
+    min-width: 0;
+    padding-bottom: calc(var(--bottomnav-h) + 12px);
+}
 
-/* 기본 버튼/아이콘(공용) */
+.app__content--nopad {
+    padding-bottom: 0;
+}
+
+/* 버튼 공용 */
 .btn {
     display:inline-flex; align-items:center; justify-content:center; gap:6px;
     height:34px; padding:0 12px; border-radius:12px; border:1px solid #e2e8f0;
@@ -57,7 +65,7 @@
 .btn--icon.is-active { background:#eef2ff; border-color:#c7d2fe; }
 .btn--logout { background:#fee2e2; border-color:#fecaca; }
 
-/* ===== 하단 고정 네비게이션 (Bottom Nav) ===== */
+/* ===== BottomNav: 모바일/태블릿에서만 보이게 ===== */
 .bottomnav {
     position: fixed;
     left: 0; right: 0; bottom: 0;
@@ -66,7 +74,7 @@
     border-top: 1px solid #e2e8f0;
     backdrop-filter: blur(8px);
     display: grid;
-    grid-template-columns: repeat(2, 1fr);  /* 친구 / 채팅 / 알림 */
+    grid-template-columns: repeat(2, 1fr);  /* 친구 / 채팅 */
     align-items: center;
     z-index: 1000;
 }
@@ -105,7 +113,6 @@
     line-height: 1;
 }
 
-/* 알림 벨이 내부에 버튼 스타일을 이미 가지고 있어도 레이아웃 안정화 */
 .bottomnav .btn,
 .bottomnav .btn--icon {
     all: unset;
@@ -113,59 +120,84 @@
     place-items: center;
 }
 
-/* Modal / Bell (공용) */
-.modal__overlay {
-    position: fixed; inset: 0;
-    background: rgba(0,0,0,0.45);
-    display: flex; align-items: flex-start; justify-content: center;
-    padding-top: 80px; z-index: 2000;
-}
-.modal__panel {
-    width: min(720px, 92vw);
-    background: #fff; color: #0f172a;
-    border: 1px solid #e2e8f0; border-radius: 14px;
-    box-shadow: 0 8px 24px rgba(3,10,26,.15);
-    overflow: hidden;
-}
-.modal__header {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 14px 16px; border-bottom: 1px solid #e2e8f0; background: #f8fafc;
-}
-.modal__body { padding: 12px; }
-
-/* 알림 뱃지 */
-.badge--notif {
-    position:absolute; top:-4px; right:-4px; min-width:18px; height:18px; padding:0 5px;
+/* 배지(공용) */
+.badge--notif,
+.badge--nav {
+    position:absolute;
+    min-width:18px; height:18px; padding:0 5px;
     border-radius:9px; font-size:11px; display:inline-flex; align-items:center; justify-content:center;
     background:#ef4444; color:#fff; font-weight:700; box-shadow:0 0 0 2px #fff;
 }
 
-/* ===== 반응형 ===== */
+.bottomnav__item { position: relative; }
+.badge--nav { top: 6px; right: 18px; }
+
+/* ===== Sidebar: 데스크톱에서만 보이게 ===== */
+.sidebar {
+    display: none;             /* 모바일/태블릿에서는 감춤 */
+}
+
+/* ===== 반응형: 데스크톱 기준 (원하는 폭으로 조절, 예: 960px) ===== */
+@media (min-width: 960px) {
+    /* 레이아웃을 2 컬럼으로: [사이드바 | 메인] */
+    .app {
+        grid-template-columns: var(--sidebar-w) 1fr;
+        grid-template-rows: 1fr;
+    }
+    /* 상세 화면이어도 데스크톱에서는 사이드바 유지 */
+    .app.app--detail {
+        grid-template-columns: var(--sidebar-w) 1fr;
+    }
+
+    /* 사이드바 표시 */
+    .sidebar {
+        display: grid;
+        grid-auto-rows: min-content;
+        position: sticky; top: 0;
+        height: 100vh;
+        border-right: 1px solid #e2e8f0;
+        background: #fff;
+        z-index: 900;
+    }
+    .sidebar__brand {
+        padding: 16px 14px;
+        font-weight: 800;
+        border-bottom: 1px solid #e2e8f0;
+    }
+    .sidebar__nav {
+        display: grid;
+        padding: 8px;
+        gap: 4px;
+    }
+    .sidebar__link {
+        position: relative;
+        display: grid;
+        grid-template-columns: 28px 1fr auto;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 12px;
+        border-radius: 10px;
+        color: #0f172a;
+        text-decoration: none;
+    }
+    .sidebar__link.is-active {
+        background: #eef2ff;
+    }
+    .sidebar__icon { width: 28px; height: 28px; display: grid; place-items: center; }
+    .sidebar__label { font-weight: 700; }
+
+    /* 바텀내비 데스크톱에서는 숨김 */
+    .bottomnav {
+        display: none;
+    }
+
+    /* 데스크톱에선 컨텐츠 하단 패딩(바텀내비 높이) 제거 */
+    .app__content {
+        padding-bottom: 16px;
+    }
+}
+
+/* 모바일에서 상단바 로그아웃 버튼 노출 */
 @media (max-width: 840px) {
-    /* 모바일에서 상단바 로그아웃 버튼 노출 */
     .app__logout { display: inline-flex; }
-}
-
-/* bottomnav의 각 아이템을 배지 기준점으로 */
-.bottomnav__item {
-    position: relative;
-}
-
-/* 채팅 탭 배지 스타일 */
-.badge--nav {
-    position: absolute;
-    top: 6px;
-    right: 18px;
-    min-width: 18px;
-    height: 18px;
-    padding: 0 5px;
-    border-radius: 9px;
-    font-size: 11px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    background: #ef4444; /* red-500 */
-    color: #fff;
-    font-weight: 700;
-    box-shadow: 0 0 0 2px #fff;
 }

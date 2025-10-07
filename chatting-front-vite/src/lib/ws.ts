@@ -84,7 +84,7 @@ class WS {
       },
 
       // 자동 재연결(고정 딜레이). 필요 시 5초 → 10초 등으로 조정
-      reconnectDelay: 5000,
+      reconnectDelay: 1000,
 
       // 서버와 맞춰 튜닝
       heartbeatIncoming: 10000,

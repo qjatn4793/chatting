@@ -92,7 +92,9 @@ function pickRoomId(obj: any): string | undefined {
 }
 
 export function NotificationsProvider({ children }: { children: React.ReactNode }) {
-    const { user } = useAuth() as any
+    const { user, isAuthed } = useAuth() as any
+    const location = useLocation()
+    const onAuthPage = location.pathname === '/login' // 로그인 페이지 감지
 
     // ✅ meKey는 이메일 우선 (서버에서 sender=email로 보낼 가능성高)
     const meKey = useMemo(() => {
@@ -121,7 +123,47 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
     // 방별 구독 레지스트리: roomId -> cleanup
     const roomSubsRef = useRef<Map<string, () => void>>(new Map())
 
-    const location = useLocation()
+    // 초기 미확인 요약 동기화: 인증 전/로그인 페이지에서는 건너뜀
+    useEffect(() => {
+        if (!isAuthed || onAuthPage) return
+            ;(async () => {
+            try {
+                const res = await http.get(SERVER_UNREAD_ENDPOINT) // [{ roomId, count }]
+                if (Array.isArray(res.data)) {
+                    const merged = { ...unread }
+                    for (const row of res.data) {
+                        const rid = row?.roomId ?? row?.room_id ?? row?.id ?? row?.room
+                        if (rid != null) {
+                            merged[String(rid)] = Number(row?.count ?? row?.unread ?? row?.unreadCount ?? 0)
+                        }
+                    }
+                    persist(merged)
+                }
+            } catch {
+                // 서버 미구현/권한 문제는 무시
+            }
+        })()
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isAuthed, onAuthPage])
+
+    // 내 방 목록 조회: 인증 전/로그인 페이지에서는 건너뜀
+    useEffect(() => {
+        if (!isAuthed || onAuthPage) return
+            ;(async () => {
+            try {
+                const res = await http.get(ROOMS_ENDPOINT)
+                const arr = Array.isArray(res.data) ? res.data : []
+                const list: Array<{ id: string }> = []
+                for (const r of arr) {
+                    if (!r?.id) continue
+                    list.push({ id: String(r.id) })
+                }
+                setRooms(list)
+            } catch (e) {
+                console.warn('[useNotifications] /rooms fetch failed', e)
+            }
+        })()
+    }, [isAuthed, onAuthPage])
 
     // 라우트 기준 활성 방 설정
     useEffect(() => {
