@@ -6,7 +6,7 @@ import { useNotifications } from '@/hooks/useNotifications'
 import { ws } from '@/lib/ws'
 import { RoomsAPI, MessageDto, RoomDto } from '@/api/rooms'
 import { eqId, toStr } from '@/lib/identity'
-import { toMillis } from '@/lib/time'
+import { toMillis, fmtKakaoTimeKST, fmtFullKST } from '@/lib/time'
 import { useViewportKB } from '@/hooks/useViewportKB'
 
 type UiMsg = {
@@ -264,7 +264,21 @@ export default function ChatRoomPage(): JSX.Element {
                     return (
                         <div key={m.id} className={`chat__msg ${mine ? 'me' : ''}`}>
                             <div className="chat__sender">{label}</div>
-                            <div className="chat__bubble">{m.content}</div>
+
+                            {/* 버블과 시간을 한 줄로 */}
+                            <div className="chat__row">
+                                <div className="chat__bubble">
+                                    <span className="chat__text">{m.content}</span>
+                                </div>
+
+                                <time
+                                    className="chat__time-outside"
+                                    title={fmtFullKST(m.createdAt ?? '')}
+                                    dateTime={new Date(toMillis(m.createdAt ?? '')).toISOString()}
+                                >
+                                    {fmtKakaoTimeKST(m.createdAt ?? '')}
+                                </time>
+                            </div>
                         </div>
                     )
                 })}

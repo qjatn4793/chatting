@@ -6,7 +6,7 @@ import { useNotifications } from '@/hooks/useNotifications'
 import { ws } from '@/lib/ws'
 import { RoomsAPI, RoomDto, MessageDto } from '@/api/rooms'
 import { toStr } from '@/lib/identity'
-import { fmtTime } from '@/lib/time'
+import {fmtKakaoTimeKST} from '@/lib/time'
 import { previewCache } from '@/lib/previewCache'
 
 type UiMsg = {
@@ -300,7 +300,7 @@ export default function ChatListPage(): JSX.Element {
                         const title = titleOf(r)
                         const count = unreadState?.[r.id] ?? 0
                         const preview = r.lastMessagePreview || ''
-                        const timeText = fmtTime(r.lastMessageAt)
+                        const timeText = fmtKakaoTimeKST(r.lastMessageAt)
                         return (
                             <li key={r.id} className="friends__item" onClick={() => navigate(`/chat/${r.id}`)}>
                                 <div className="friends__left">

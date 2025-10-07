@@ -1,5 +1,5 @@
 /* ================================
-   Chat UI Styles (full file)
+   Chat UI Styles (cleaned)
    ================================ */
 
 :root {
@@ -22,6 +22,7 @@
     --input-h: 56px; /* 입력 바 실제 높이 */
 
     --app-header-h: 56px;
+    --time-space: 56px;
 }
 
 * { box-sizing: border-box; }
@@ -29,7 +30,7 @@
 /* 문서/바디 차원에서 스크롤 체이닝 차단 */
 html, body {
     height: 100%;
-    overscroll-behavior-y: none;     /* 상하 체이닝 글로벌 차단 */
+    overscroll-behavior-y: none;
     -webkit-overflow-scrolling: touch;
     background: var(--bg);
 }
@@ -38,15 +39,12 @@ html, body {
 .chat {
     display: flex;
     flex-direction: column;
-
-    height: calc(var(--vvh));
-    min-height: calc(var(--vvh));
+    height: var(--vvh);
+    min-height: var(--vvh);
     overflow: hidden;
-
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-
-    overscroll-behavior: contain;    /* 내부 스크롤만 허용 */
+    overscroll-behavior: contain;
 }
 
 /* ===== Header ===== */
@@ -63,7 +61,6 @@ html, body {
     backdrop-filter: blur(8px);
     border-bottom: var(--border);
 }
-
 .chat__header h2 {
     margin: 0;
     font-size: 16px;
@@ -74,7 +71,6 @@ html, body {
     text-overflow: ellipsis;
     white-space: nowrap;
 }
-
 .chat__header button {
     appearance: none;
     border: 0;
@@ -85,11 +81,10 @@ html, body {
     color: #0f172a;
     cursor: pointer;
     transition: transform .06s ease, background .2s ease;
-    touch-action: manipulation;       /* 더블탭 확대 완화 */
+    touch-action: manipulation;
 }
 .chat__header button:hover { background: #e2e8f0; transform: translateY(-1px); }
 .chat__header button:active { transform: translateY(0); }
-
 .muted { color: var(--muted); font-size: 12px; }
 
 /* ===== Message List ===== */
@@ -97,14 +92,10 @@ html, body {
     flex: 1 1 auto;
     min-height: 0;
     overflow: auto;
-
-    /* 입력바 + 여유 */
-    padding: 16px 18px;
-
+    padding: 16px 18px; /* 입력바 + 여유 */
     display: flex;
     flex-direction: column;
     gap: 12px;
-
     -webkit-overflow-scrolling: touch;
     overscroll-behavior: contain;
     scroll-behavior: auto;
@@ -125,7 +116,6 @@ html, body {
     padding: 2px 0;
     text-align: left;
 }
-
 .chat__msg.me {
     margin-left: auto;
     align-self: flex-end;
@@ -140,7 +130,9 @@ html, body {
 }
 .chat__msg.me .chat__sender { text-align: right; }
 
-/* Bubble */
+/* ===== Bubble (기본) =====
+   - 줄바꿈 정책은 .chat__text에서만 관리
+   - 여기서는 과도한 강제 줄바꿈 옵션 제거 */
 .chat__bubble {
     width: fit-content;
     max-width: 100%;
@@ -149,8 +141,6 @@ html, body {
     border: var(--border);
     box-shadow: var(--shadow);
     line-height: 1.45;
-    word-break: break-word;
-    white-space: pre-wrap;
     background: var(--bubble);
 }
 .chat__msg.me .chat__bubble {
@@ -159,8 +149,14 @@ html, body {
     border-radius: 14px 14px 6px 14px;
 }
 
+/* 버블 내부 텍스트: 개행(\n)만 유지, 그 외는 일반 줄바꿈 */
+.chat__text {
+    display: block;
+    white-space: pre-wrap;
+    overflow-wrap: break-word; /* 너무 긴 단어/URL만 경계에서 줄바꿈 */
+}
+
 /* ===== Input Bar ===== */
-/* 기본은 sticky, 내부 체이닝 차단 + 세로 드래그 상위 전파 억제 */
 .chat__input {
     position: sticky;
     bottom: 0;
@@ -178,23 +174,18 @@ html, body {
     border-top: var(--border);
     backdrop-filter: blur(6px);
     z-index: 20;
-
     overscroll-behavior-y: contain;
-    touch-action: pan-x; /* 수평 제스처는 허용, 세로는 JS에서 차단 */
+    touch-action: pan-x;
 }
-
-/* 키보드 열린 동안에는 fixed로 전환해 iOS sticky 페인트 버그 제거 */
+/* 키보드 열린 동안에는 fixed 전환 */
 .kb-open .chat__input {
     position: fixed;
-    left: 0;
-    right: 0;
-    bottom: 0;
+    left: 0; right: 0; bottom: 0;
 }
-
 .chat__input input {
     width: 100%;
     height: 44px;
-    font-size: 16px;             /* iOS 확대 방지 */
+    font-size: 16px; /* iOS 확대 방지 */
     line-height: 1.2;
     -webkit-text-size-adjust: 100%;
     padding: 0 14px;
@@ -206,7 +197,6 @@ html, body {
 }
 .chat__input input::placeholder { color: #789; }
 .chat__input input:focus { border-color: #2a62ff66; box-shadow: none; }
-
 .chat__input button {
     height: 44px;
     padding: 0 16px;
@@ -239,9 +229,53 @@ html, body {
 }
 .chat__list::-webkit-scrollbar-track { background: transparent; }
 
-/* ===== Small screens ===== */
+/* ===== Kakao-like: bubble + time in one row ===== */
+/* 행 컨테이너: inline-block으로 내용 크기만큼만 차지 + 절대배치 기준 */
+.chat__row {
+    position: relative;
+    display: inline-block;
+    max-width: 100%;
+    vertical-align: bottom;
+}
+
+/* 내 메시지: 시간은 왼쪽 → 왼쪽 패딩으로 공간 예약, 오른쪽은 0 */
+.chat__msg.me .chat__row {
+    padding-right: 0;
+}
+
+/* 버블은 행 폭 안에서만 확장 (패딩으로 시간 영역이 이미 빠짐) */
+.chat__row .chat__bubble {
+    display: inline-block;
+    vertical-align: bottom;
+    max-width: 100%;
+}
+
+/* 긴 토큰(공백 없는 숫자/URL)도 줄바꿈되도록 보강 */
+.chat__row .chat__text {
+    display: block;
+    white-space: pre-wrap;   /* \n 유지 */
+    /* 줄바꿈 우선순위: anywhere(최강) → break-word(대체) */
+    overflow-wrap: anywhere; /* 아주 긴 연속문자도 반드시 줄바꿈 */
+    word-break: break-word;  /* Safari/구형 호환 */
+}
+
+/* 시간은 절대배치(레이아웃 영향 X) */
+.chat__time-outside {
+    position: absolute;
+    bottom: 2px;
+    left: calc(100% + 6px);    /* 좌측 메시지: 버블 오른쪽 바깥 */
+    white-space: nowrap;
+    font-size: 11px;
+    line-height: 1;
+    color: var(--muted);
+}
+
+.chat__msg.me .chat__time-outside {
+    left: auto;
+    right: calc(100% + 6px);   /* 내 메시지: 버블 왼쪽 바깥 */
+}
+
 @media (max-width: 640px) {
-    .chat__list { padding: 12px 12px }
-    .chat__bubble { font-size: 14px; }
-    .chat__header { padding: 12px; }
+    :root { --time-space: 52px; }  /* 모바일에서 공간 소폭 축소 */
+    .chat__time-outside { font-size: 10.5px; }
 }
