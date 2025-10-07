@@ -10,7 +10,7 @@ import '@/styles/app-shell.css'
 export default function AppShell(): JSX.Element {
     const { userUuid, email, logout } = useAuth() as any
 
-    // ✅ /chat/:roomId 일 때만 "상세"
+    // /chat/:roomId 일 때만 "상세"
     const isChatDetail = !!useMatch('/chat/:roomId')
 
     return (

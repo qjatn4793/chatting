@@ -9,7 +9,7 @@ type ToastItem = {
     message?: string
     timeText?: string
     duration?: number
-    /** ✅ 토스트 본문 클릭 시 동작 (예: 채팅방으로 이동) */
+    /** 토스트 본문 클릭 시 동작 (예: 채팅방으로 이동) */
     onClick?: () => void
 }
 

@@ -82,7 +82,7 @@ export default function ChatListPage(): JSX.Element {
     const subsRef = useRef<Map<string, () => void>>(new Map())
     const prefetchOnceRef = useRef(false)
 
-    // ✅ iOS Safari 정확한 viewport height(러버밴드/주소창 변동 대응)
+    // iOS Safari 정확한 viewport height(러버밴드/주소창 변동 대응)
     useEffect(() => {
         const setVVH = () => {
             const vh = (window as any).visualViewport?.height ?? window.innerHeight

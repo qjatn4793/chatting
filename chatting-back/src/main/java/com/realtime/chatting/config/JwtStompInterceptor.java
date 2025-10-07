@@ -23,10 +23,10 @@ import java.util.Collections;
 @Slf4j
 public class JwtStompInterceptor implements ChannelInterceptor {
 
-    // ✅ JwtService → JwtProvider로 교체 (0.12.x용)
+    // JwtService → JwtProvider로 교체 (0.12.x용)
     private final JwtProvider jwtProvider;
 
-    // ✅ SessionStore가 없는 환경도 고려: 선택 주입
+    // SessionStore가 없는 환경도 고려: 선택 주입
     private final ObjectProvider<SessionStore> sessionStoreProvider;
 
     private static final String BEARER = "Bearer ";
@@ -45,7 +45,7 @@ public class JwtStompInterceptor implements ChannelInterceptor {
 
             String token = authHeader.substring(BEARER.length());
             try {
-                // ✅ 0.12.x: JwtProvider에서 Access 토큰 파싱(검증 포함)
+                // 0.12.x: JwtProvider에서 Access 토큰 파싱(검증 포함)
                 Claims claims = jwtProvider.parseAccessClaims(token);
 
                 // 우리는 subject를 내부 PK(UUID 문자열)로 사용 중

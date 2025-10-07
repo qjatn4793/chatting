@@ -45,7 +45,7 @@ export default function RequestsPanel(): JSX.Element {
         try { window.dispatchEvent(new CustomEvent('friends:maybe-changed')) } catch {}
     }, [])
 
-    // ✅ 실시간 구독(다중 경로) + 재연결 복구 + 포커스/가시성/온라인 복귀 + (옵션) 가벼운 폴링
+    // 실시간 구독(다중 경로) + 재연결 복구 + 포커스/가시성/온라인 복귀 + (옵션) 가벼운 폴링
     useEffect(() => {
         if (!userUuid) return
         const uid = String(userUuid)

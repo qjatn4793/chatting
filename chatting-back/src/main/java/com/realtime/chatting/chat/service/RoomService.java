@@ -51,7 +51,7 @@ public class RoomService {
                 .collect(Collectors.toList());
     }
 
-    /** ✅ DM 열기: UUID 시그니처 */
+    /** DM 열기: UUID 시그니처 */
     @Transactional
     public RoomDto openDmById(UUID meId, UUID otherId) {
         if (meId.equals(otherId)) throw new IllegalArgumentException("cannot dm yourself");

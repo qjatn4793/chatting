@@ -183,7 +183,7 @@ html, body {
     touch-action: pan-x; /* 수평 제스처는 허용, 세로는 JS에서 차단 */
 }
 
-/* ✅ 키보드 열린 동안에는 fixed로 전환해 iOS sticky 페인트 버그 제거 */
+/* 키보드 열린 동안에는 fixed로 전환해 iOS sticky 페인트 버그 제거 */
 .kb-open .chat__input {
     position: fixed;
     left: 0;

@@ -8,7 +8,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import javax.crypto.SecretKey;
-import javax.crypto.spec.SecretKeySpec; // ✅ Keys 대신 직접 생성
+import javax.crypto.spec.SecretKeySpec; // Keys 대신 직접 생성
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Base64;
@@ -43,7 +43,7 @@ public class JwtProviderImpl implements JwtProvider {
             throw new IllegalArgumentException("JWT secret length must be >= 32 bytes (256 bits).");
         }
 
-        // ✅ Keys.hmacShaKeyFor(...) 제거: KeysBridge 로딩 회피
+        // Keys.hmacShaKeyFor(...) 제거: KeysBridge 로딩 회피
         this.accessKey  = new SecretKeySpec(aBytes,  HMAC_ALG);
         this.refreshKey = new SecretKeySpec(rBytes, HMAC_ALG);
 

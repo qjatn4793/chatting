@@ -14,7 +14,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import com.realtime.chatting.auth.SessionStore;
-import com.realtime.chatting.security.JwtProvider; // ✅ JwtService 대신
+import com.realtime.chatting.security.JwtProvider; // JwtService 대신
 
 import java.io.IOException;
 import java.util.List;
@@ -24,7 +24,7 @@ import java.util.List;
 @Slf4j
 public class JWTAuthenticationFilter extends OncePerRequestFilter {
 
-    private final JwtProvider jwtProvider;     // ✅ 교체
+    private final JwtProvider jwtProvider;     // 교체
     private final SessionStore sessionStore;   // 싱글세션(선택)
 
     private static final String BEARER = "Bearer ";
@@ -47,7 +47,7 @@ public class JWTAuthenticationFilter extends OncePerRequestFilter {
         if (h != null && h.startsWith(BEARER)) {
             String token = h.substring(BEARER.length());
             try {
-                // ✅ 액세스 토큰 검증 + 클레임 파싱
+                // 액세스 토큰 검증 + 클레임 파싱
                 Claims c = jwtProvider.parseAccessClaims(token);
 
                 // 0.12.x 구현에서 subject는 "내부 PK(UUID 문자열)"

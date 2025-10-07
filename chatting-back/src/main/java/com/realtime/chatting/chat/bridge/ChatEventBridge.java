@@ -87,7 +87,7 @@ public class ChatEventBridge {
                     .roomId(roomId)
                     .senderUserId(senderUuid != null ? senderUuid.toString() : senderRaw)
                     .sender(senderRaw)                 // 백워드 호환
-                    .username(displayUsername)         // ✅ 표시용 username 포함
+                    .username(displayUsername)         // 표시용 username 포함
                     .content(message.getContent())     // 필요 시 null로 두고 preview만 사용해도 됨
                     .preview(preview)
                     .createdAt(now)

@@ -47,9 +47,9 @@ type Ctx = {
     getUnreadByRoom: (roomId: string) => number
     resetUnread: (roomId: string) => void
     setActiveRoom: (roomId?: string) => void
-    /** ✅ 현재 활성 방(roomId)을 읽기 — 리렌더 없이도 최신값을 돌려줌 */
+    /** 현재 활성 방(roomId)을 읽기 — 리렌더 없이도 최신값을 돌려줌 */
     getActiveRoom: () => string | undefined
-    /** ✅ 외부(RealtimeProvider)에서 WS 수신 시 호출할 엔트리포인트 */
+    /** 외부(RealtimeProvider)에서 WS 수신 시 호출할 엔트리포인트 */
     pushNotif: (n: ChatNotify) => void
 }
 
@@ -96,7 +96,7 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
     const location = useLocation()
     const onAuthPage = location.pathname === '/login' // 로그인 페이지 감지
 
-    // ✅ meKey는 이메일 우선 (서버에서 sender=email로 보낼 가능성高)
+    // meKey는 이메일 우선 (서버에서 sender=email로 보낼 가능성高)
     const meKey = useMemo(() => {
         const cand =
             user?.email ??
@@ -198,7 +198,7 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
         })
     }
 
-    // ✅ 초기 미확인 요약 동기화
+    // 초기 미확인 요약 동기화
     useEffect(() => {
         ;(async () => {
             try {
@@ -222,7 +222,7 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [])
 
-    // ✅ 내 방 목록 (roomId 리스트 확보 — 선택)
+    // 내 방 목록 (roomId 리스트 확보 — 선택)
     useEffect(() => {
         ;(async () => {
             try {
@@ -339,7 +339,7 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
         }
     }
 
-    // ✅ 현재 활성 방을 읽는 함수(리렌더 없이 최신값 반환)
+    // 현재 활성 방을 읽는 함수(리렌더 없이 최신값 반환)
     const getActiveRoom = useCallback((): string | undefined => {
         return activeRoomRef.current
     }, [])
@@ -356,7 +356,7 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
     }, [])
 
     /**
-     * ✅ RealtimeProvider에서 WS로 받은 알림을 주입하는 엔트리
+     * RealtimeProvider에서 WS로 받은 알림을 주입하는 엔트리
      * 다양한 payload를 방어적으로 처리한다.
      */
     const pushNotif = (n: ChatNotify) => {
@@ -414,8 +414,8 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
             getUnreadByRoom,
             resetUnread,
             setActiveRoom,
-            getActiveRoom,   // ✅ 노출
-            pushNotif,       // ✅ 노출
+            getActiveRoom,   // 노출
+            pushNotif,       // 노출
         }),
         [unread, getActiveRoom, pushNotif]
     )

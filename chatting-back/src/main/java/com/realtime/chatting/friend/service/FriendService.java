@@ -132,7 +132,7 @@ public class FriendService {
         cancel(id, requireUser(myUserId).getEmail());
     }
 
-    /** ✅ 프론트 요구대로: 이메일 리스트 반환 */
+    /** 프론트 요구대로: 이메일 리스트 반환 */
     @Transactional(readOnly = true)
     public List<String> myFriendsByUserId(UUID myUserId) {
         User me = requireUser(myUserId);
@@ -285,7 +285,7 @@ public class FriendService {
                 .filter(Objects::nonNull)
                 .filter(u -> u.getEmail() != null && !u.getEmail().isBlank())
                 .collect(Collectors.toMap(
-                        u -> u.getEmail().trim().toLowerCase(Locale.ROOT), // ✅ 올바른 키
+                        u -> u.getEmail().trim().toLowerCase(Locale.ROOT), // 올바른 키
                         Function.identity(),
                         (a, b) -> a // 충돌 시 첫 번째 유지
                 ));

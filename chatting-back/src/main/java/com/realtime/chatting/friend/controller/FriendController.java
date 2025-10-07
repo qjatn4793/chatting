@@ -30,7 +30,7 @@ public class FriendController {
         return friendService.myFriendBriefsByUserId(myId);
     }
 
-    /** ✅ 친구 요청: identifier(이메일/휴대폰/이름) 중 하나만 보내면 됨 */
+    /** 친구 요청: identifier(이메일/휴대폰/이름) 중 하나만 보내면 됨 */
     @PostMapping("/requests")
     @ResponseStatus(HttpStatus.CREATED)
     public FriendRequestDto sendFlexible(@RequestBody SendFriendRequest body, Authentication auth) {

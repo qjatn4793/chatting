@@ -79,7 +79,7 @@ export default function ChatRoomPage(): JSX.Element {
         return near
     }, [])
 
-    // ✅ 컨테이너 직접 스크롤 방식 (iOS fixed+sticky 조합에서도 안정)
+    // 컨테이너 직접 스크롤 방식 (iOS fixed+sticky 조합에서도 안정)
     const scrollToBottom = useCallback((behavior: ScrollBehavior = 'auto') => {
         const list = listRef.current as HTMLDivElement | null
         if (!list) return

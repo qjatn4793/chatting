@@ -5,9 +5,9 @@ import { ws } from '@/lib/ws'
 
 type AuthCtx = {
     token: string | null
-    userId: string | null          // ✅ 과거 호환(실제 식별자: UUID)
-    userUuid: string | null        // ✅ 명시적 필드 (동일값, 점진적 전환용)
-    email: string | null           // ✅ 화면 표시에 사용할 이메일
+    userId: string | null          // 과거 호환(실제 식별자: UUID)
+    userUuid: string | null        // 명시적 필드 (동일값, 점진적 전환용)
+    email: string | null           // 화면 표시에 사용할 이메일
     name: string | null            // (옵션) 표시명
     isAuthed: boolean
     login: (jwt: string) => void

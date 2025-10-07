@@ -37,7 +37,7 @@ public class RoomsController {
     /** 내 방 목록 (주체: JWT sub = UUID) */
     @GetMapping
     public List<RoomDto> myRooms(Authentication auth) {
-        UUID myId = UUID.fromString(auth.getName());     // ✅ sub=UUID
+        UUID myId = UUID.fromString(auth.getName());     // sub=UUID
         return roomService.myRooms(String.valueOf(myId));
     }
 

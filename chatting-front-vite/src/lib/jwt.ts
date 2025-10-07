@@ -27,12 +27,12 @@ export function parseJwt(token: string | null | undefined): JwtClaims | null {
     }
 }
 
-// ✅ 기존 함수는 UUID용으로 의미를 명확히 (이름 변경)
+// 기존 함수는 UUID용으로 의미를 명확히 (이름 변경)
 export function getUserUuidFromToken(token: string | null | undefined): string | null {
     return parseJwt(token)?.sub ?? null;
 }
 
-// ✅ 이메일 추출
+// 이메일 추출
 export function getEmailFromToken(token: string | null | undefined): string | null {
     const c = parseJwt(token);
     const email = (c?.email ?? '') as string;
