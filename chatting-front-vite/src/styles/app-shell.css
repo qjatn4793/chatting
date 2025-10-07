@@ -46,7 +46,6 @@
 
 /* 본문(모바일/태블릿): bottomnav에 가리지 않게 패딩 */
 .app__content {
-    padding: 16px;
     min-width: 0;
     padding-bottom: calc(var(--bottomnav-h) + 12px);
 }
