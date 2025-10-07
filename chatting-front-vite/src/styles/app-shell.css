@@ -46,7 +46,7 @@
 
 /* 본문(모바일/태블릿): bottomnav에 가리지 않게 패딩 */
 .app__content {
-    min-width: 0;
+    width: 100%;
     padding-bottom: calc(var(--bottomnav-h) + 12px);
 }
 
@@ -143,10 +143,6 @@
         grid-template-columns: var(--sidebar-w) 1fr;
         grid-template-rows: 1fr;
     }
-    /* 상세 화면이어도 데스크톱에서는 사이드바 유지 */
-    .app.app--detail {
-        grid-template-columns: var(--sidebar-w) 1fr;
-    }
 
     /* 사이드바 표시 */
     .sidebar {
@@ -197,6 +193,6 @@
 }
 
 /* 모바일에서 상단바 로그아웃 버튼 노출 */
-@media (max-width: 840px) {
-    .app__logout { display: inline-flex; }
-}
+/*@media (max-width: 840px) {*/
+/*    .app__logout { display: inline-flex; }*/
+/*}*/

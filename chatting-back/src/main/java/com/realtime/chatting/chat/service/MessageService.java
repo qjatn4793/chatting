@@ -42,11 +42,24 @@ public class MessageService {
 
     public MessageDto save(String roomId, String messageId, String username, String sender, String content) {
         ChatMessage m = ChatMessage.builder()
-            .roomId(roomId).messageId(messageId).sender(sender).username(username).content(content).createdAt(Instant.now())
+            .roomId(roomId)
+            .messageId(messageId)
+            .sender(sender)
+            .username(username)
+            .content(content)
+            .createdAt(Instant.now())
             .build();
         m = messageRepo.save(m);
         return MessageDto.builder()
-            .id(m.getId()).roomId(roomId).messageId(UUID.fromString(messageId)).sender(sender).username(username).content(content).createdAt(m.getCreatedAt()).build();
+            .id(m.getId())
+            .roomId(roomId)
+            .messageId(UUID
+            .fromString(messageId))
+            .sender(sender)
+            .username(username)
+            .content(content)
+            .createdAt(m.getCreatedAt())
+            .build();
     }
 
     /** 주어진 roomIds 중 "나"가 구성원인 방만 필터링 후 각 방의 최신 메시지 1건씩 반환 */
