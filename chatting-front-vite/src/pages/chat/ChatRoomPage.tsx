@@ -65,7 +65,7 @@ export default function ChatRoomPage(): JSX.Element {
     const { roomId } = useParams<{ roomId: string }>()
     const nav = useNavigate()
     const { userUuid, email } = useAuth() as { userUuid?: string | null; email?: string | null }
-    const { setActiveRoom } = useNotifications() as any
+    const { setActiveRoom, setAtBottom } = useNotifications() as any
 
     const myKeys = useMemo(() => {
         const keys = [toStr(userUuid)]
@@ -109,12 +109,17 @@ export default function ChatRoomPage(): JSX.Element {
 
     const measureNearBottom = useCallback(() => {
         const list = listRef.current as HTMLDivElement | null
-        if (!list) { nearBottomRef.current = true; return true }
+        if (!list) {
+            nearBottomRef.current = true
+            try { setAtBottom?.(true) } catch {}
+            return true
+        }
         const diff = list.scrollHeight - list.scrollTop - list.clientHeight
         const near = diff <= NEAR_PX
         nearBottomRef.current = near
+        try { setAtBottom?.(near) } catch {}
         return near
-    }, [])
+    }, [setAtBottom])
 
     const scrollToBottom = useCallback((behavior: ScrollBehavior = 'auto') => {
         const list = listRef.current as HTMLDivElement | null
@@ -184,6 +189,16 @@ export default function ChatRoomPage(): JSX.Element {
             ;(async () => { try { await RoomsAPI.markRead(roomId) } catch {} })()
         }
     }, [roomId, setActiveRoom, scrollToBottom, measureNearBottom])
+
+    // 리스트 스크롤 → 바닥 근접 상태 갱신 (기존에 + 전역 통지)
+    useEffect(() => {
+        const el = listRef.current
+        if (!el) return
+        const onScroll = () => measureNearBottom()
+        el.addEventListener('scroll', onScroll, { passive: true })
+        measureNearBottom()
+        return () => { el.removeEventListener('scroll', onScroll) }
+    }, [measureNearBottom])
 
     // 상단 도달 시 더 불러오기
     const loadOlder = useCallback(async () => {

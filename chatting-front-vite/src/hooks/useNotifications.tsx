@@ -49,6 +49,10 @@ type Ctx = {
     getActiveRoom: () => string | undefined
     pushNotif: (n: ChatNotify) => void
     refreshUnreadFromServer: () => Promise<void>
+
+    // 전역 알림 추가
+    setAtBottom: (v: boolean) => void
+    getAtBottom: () => boolean
 }
 
 const NotificationsContext = createContext<Ctx | null>(null)
@@ -147,6 +151,7 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
     const [rooms, setRooms] = useState<Array<{ id: string }>>([])
 
     const activeRoomRef = useRef<string | undefined>(undefined)
+    const atBottomRef = useRef<boolean>(true) // 현재 활성방 리스트에서 "바닥 근접" 여부
     const recentMsgIds = useRef<Set<string>>(new Set())
 
     // 전역 방 토픽(미리보기 전용) 구독 레지스트리
@@ -159,6 +164,12 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
         const m = location.pathname.match(/^\/chat\/([^/]+)/)
         activeRoomRef.current = m ? m[1] : undefined
     }, [location.pathname])
+
+    const setAtBottom = useCallback((v: boolean) => {
+        atBottomRef.current = !!v
+    }, [])
+
+    const getAtBottom = useCallback(() => atBottomRef.current, [])
 
     const persist = (obj: Record<string, number>) => {
         setUnread(obj)
@@ -451,8 +462,10 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
             getActiveRoom,
             pushNotif,
             refreshUnreadFromServer,
+            setAtBottom,
+            getAtBottom,
         }),
-        [unread, getActiveRoom, pushNotif, refreshUnreadFromServer]
+        [unread, getActiveRoom, pushNotif, refreshUnreadFromServer, setAtBottom, getAtBottom]
     )
 
     return (

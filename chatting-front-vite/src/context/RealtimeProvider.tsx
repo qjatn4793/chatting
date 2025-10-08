@@ -5,6 +5,12 @@ import { useAuth } from '@/context/AuthContext'
 import { useNotifications } from '@/hooks/useNotifications'
 import { useToast } from '@/pages/toast/Toast'
 import { useNavigate } from 'react-router-dom'
+import {
+    bump as blinkBump,
+    reset as blinkReset,
+    setBaseTitle as blinkSetBaseTitle,
+} from '@/lib/tabBlinker'
+import { notifyCritical, stopAttention } from '@/lib/nativeNotify'
 
 type AnyPayload = Record<string, any>
 
@@ -45,16 +51,24 @@ const RealtimeProvider: React.FC<Props> = ({ children }) => {
         userId?: string | null
         logout: (r?: string) => void
     }
-    const { pushNotif, getActiveRoom } = useNotifications() as {
+
+    const { pushNotif, getActiveRoom, getAtBottom } = useNotifications() as {
         pushNotif: (p: AnyPayload) => void
         getActiveRoom: () => string | undefined
+        getAtBottom: () => boolean
     }
+
     const toast = useToast()
 
-    // 나 자신 식별 후보 키 (백엔드가 senderUserId=UUID 를 보냄)
+    // 나 자신 식별 후보 키
     const myKeys = useMemo(() => {
         return [userId].filter(Boolean).map(String) as string[]
     }, [userId])
+
+    // 베이스 문서 제목 고정 (앱 전역 타이틀)
+    useEffect(() => {
+        blinkSetBaseTitle('Chatting Front')
+    }, [])
 
     useEffect(() => {
         if (!token) {
@@ -70,66 +84,100 @@ const RealtimeProvider: React.FC<Props> = ({ children }) => {
             logout('다른 기기에서 로그인되어 현재 세션이 종료되었습니다.')
         })
 
-        // 전역 알림 (백엔드 ChatNotify 규격과 일치하도록 파싱)
-        const unsubNotify = userId
-            ? ws.subscribe(`/topic/chat-notify/${userId}`, (payload: AnyPayload) => {
-                // 1) 알림 스토어에 먼저 전달(미리보기/언리드 반영)
-                try { pushNotif?.(payload) } catch {}
+        // 전역 알림
+        const unsubNotify =
+            userId
+                ? ws.subscribe(`/topic/chat-notify/${userId}`, (payload: AnyPayload) => {
+                    // 1) 알림/언리드 처리
+                    try {
+                        pushNotif?.(payload)
+                    } catch {}
 
-                // 2) 필드 파싱 (백엔드 규격 우선 → 과거 키 fallback)
-                const type      = String(payload?.type ?? '').toUpperCase()
-                const roomId    = String(payload?.roomId ?? payload?.room_id ?? payload?.room ?? '')
-                const senderUid = payload?.senderUserId ?? payload?.sender ?? payload?.userId
-                const username  = payload?.username
-                    ?? payload?.senderUsername
-                    ?? payload?.email
-                    ?? payload?.from
-                    ?? '' // 표시용
+                    // 2) 필드 파싱
+                    const type = String(payload?.type ?? '').toUpperCase()
+                    const roomId = String(payload?.roomId ?? payload?.room_id ?? payload?.room ?? '')
+                    const senderUid = payload?.senderUserId ?? payload?.sender ?? payload?.userId
+                    const username =
+                        payload?.username ??
+                        payload?.senderUsername ??
+                        payload?.email ??
+                        payload?.from ??
+                        ''
 
-                // 내용: content → preview → 기타 텍스트 계열
-                const content   = payload?.content
-                    ?? payload?.preview
-                    ?? payload?.message
-                    ?? payload?.text
-                    ?? ''
+                    const content =
+                        payload?.content ??
+                        payload?.preview ??
+                        payload?.message ??
+                        payload?.text ??
+                        ''
 
-                const createdAt = payload?.createdAt ?? payload?.time ?? Date.now()
+                    const createdAt = payload?.createdAt ?? payload?.time ?? Date.now()
 
-                // 3) 내 메시지 제외
-                const mine = myKeys.some(k => sameId(k, senderUid))
-                if (mine) return
+                    // 3) 내 메시지는 제외
+                    const mine = myKeys.some(k => sameId(k, senderUid))
+                    if (mine) return
 
-                // 4) 활성 방이면 토스트 생략
-                const active = getActiveRoom?.()
-                if (active && roomId && String(active) === String(roomId)) return
+                    // 4) 활성 방/바닥 여부
+                    const activeRoomId = getActiveRoom?.()
+                    const isActiveRoom = !!activeRoomId && roomId && String(activeRoomId) === String(roomId)
+                    const atBottom = getAtBottom?.()
+                    const isTabHidden = document.hidden
 
-                // 5) 표시 조건: MESSAGE 이거나, 내용(preview 포함)이 있으면 토스트
-                if (type === 'MESSAGE' || content) {
-                    const title = username || (roomId ? `Room ${roomId}` : '새 메시지')
-                    const msg   = snippet(content, 90)
-                    const time  = fmtHHMM(createdAt)
+                    // 탭이 가려져 있거나, 활성 방인데 바닥이 아니면 제목 깜빡임
+                    if (isTabHidden || (isActiveRoom && !atBottom)) {
+                        blinkBump(1)
+                    }
 
-                    // (선택) 같은 방 알림은 하나만 유지하고 싶다면 id를 고정하세요:
-                    // id: `room:${roomId}`,
-                    toast.show({
-                        // username 필드를 Toast로 넘기고 싶다면 ToastItem에 username 추가한 버전 사용
-                        // id: `user:${username}`, // ← 사용자 단위로 하나만 유지하고 싶으면
-                        title,
-                        message: msg,
-                        timeText: time,
-                        duration: 3800,
-                        onClick: roomId ? () => navigate(`/chat/${roomId}`) : undefined,
-                    })
-                }
-            })
-            : () => {}
+                    // 활성 방이 아니고, 포커스/가시화가 아니면 OS 작업표시줄 주의요청
+                    const hidden = document.visibilityState === 'hidden' || !document.hasFocus()
+                    if (!isActiveRoom && hidden) {
+                        notifyCritical()
+                    }
+
+                    // 5) 토스트
+                    if (type === 'MESSAGE' || content) {
+                        const title = username || (roomId ? `Room ${roomId}` : '새 메시지')
+                        const msg = snippet(content, 90)
+                        const time = fmtHHMM(createdAt)
+                        toast.show({
+                            title,
+                            message: msg,
+                            timeText: time,
+                            duration: 3800,
+                            onClick: roomId ? () => navigate(`/chat/${roomId}`) : undefined,
+                        })
+                    }
+                })
+                : () => {}
+
+        // 포커스/가시화 시 바닥이면 제목 깜빡임 해제
+        const clearIfVisibleAndBottom = () => {
+            if (!document.hidden && getAtBottom?.()) {
+                blinkReset()
+            }
+        }
+        window.addEventListener('focus', clearIfVisibleAndBottom, { passive: true } as any)
+        document.addEventListener('visibilitychange', clearIfVisibleAndBottom, { passive: true } as any)
 
         return () => {
             unsubKick()
             unsubNotify()
-            // 전역 연결 유지 목적이면 disconnect 호출하지 않음
         }
-    }, [token, userId, logout, pushNotif, toast, myKeys, getActiveRoom, navigate])
+    }, [token, userId, logout, pushNotif, toast, myKeys, getActiveRoom, getAtBottom, navigate])
+
+    // 창이 다시 보이거나 포커스되면 네이티브 주의중지
+    useEffect(() => {
+        const onVis = () => {
+            if (document.visibilityState === 'visible') stopAttention()
+        }
+        const onFocus = () => stopAttention()
+        window.addEventListener('focus', onFocus)
+        document.addEventListener('visibilitychange', onVis)
+        return () => {
+            window.removeEventListener('focus', onFocus)
+            document.removeEventListener('visibilitychange', onVis)
+        }
+    }, [])
 
     return <>{children}</>
 }
