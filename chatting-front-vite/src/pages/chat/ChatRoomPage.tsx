@@ -227,21 +227,20 @@ export default function ChatRoomPage(): JSX.Element {
         }
     }
 
-    const headerTitle = peerLabel || roomId || '대화방'
     const displayMe = toStr(email) || toStr(userUuid) || '알 수 없음'
 
     return (
         <div className="chat">
             <div className="chat__header">
                 <button onClick={() => nav('/chat')}>← chat</button>
-                <h2>{headerTitle}</h2>
+                <h2></h2>
                 <div className="chat__headerRight">
                     {!!roomId && (
                         <button className="btn btn--sm" onClick={() => setInviteOpen(true)}>
                             친구 초대
                         </button>
                     )}
-                    <span className="me">사용자: {displayMe}</span>
+                    {/*<span className="me">사용자: {displayMe}</span>*/}
                 </div>
             </div>
 

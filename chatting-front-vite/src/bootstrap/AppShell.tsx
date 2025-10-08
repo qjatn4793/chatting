@@ -8,10 +8,12 @@ import SidebarNav from '@/bootstrap/SidebarNav'
 import '@/styles/app-shell.css'
 
 export default function AppShell(): JSX.Element {
-    const { userUuid, email, logout } = useAuth() as any
+    const { userUuid, email, name, logout } = useAuth() as any
 
     // /chat/:roomId 일 때만 "상세"
     const isChatDetail = !!useMatch('/chat/:roomId')
+
+    console.log(name);
 
     return (
         <div className={`app ${isChatDetail ? 'app--detail' : ''}`}>
@@ -23,9 +25,9 @@ export default function AppShell(): JSX.Element {
                 {!isChatDetail && (
                     <header className="app__topbar app-shell__header">
                         <div className="app__topbar__left">
-                            <div className="me-pill" title={email || '알 수 없음'}>
+                            <div className="me-pill" title={name || '알 수 없음'}>
                                 <span className="me-pill__label">사용자명 : </span>
-                                <strong className="me-pill__name">{email || '알 수 없음'}</strong>
+                                <strong className="me-pill__name">{name || '알 수 없음'}</strong>
                             </div>
                         </div>
                         <div className="app__topbar__right">
