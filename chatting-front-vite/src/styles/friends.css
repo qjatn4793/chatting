@@ -15,6 +15,10 @@
     font-weight: 800;
 }
 
+.friends__headerRow {
+    margin-bottom: 10px;
+}
+
 /* 상단바: 로그인 정보 / 액션 영역(종, 로그아웃) */
 .friends__topbar {
     display: flex; align-items: center; justify-content: space-between;
@@ -162,7 +166,7 @@
 .friends__item .btn { margin-left: 8px; }
 
 @media (max-width: 480px) {
-    .friends__preview { max-width: 48ch; }
+    .friends__preview { max-width: 43ch; }
 }
 
 /* ========== Requests Panel ========== */
