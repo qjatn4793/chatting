@@ -104,6 +104,9 @@ export default function ChatRoomPage(): JSX.Element {
     const nearBottomRef = useRef(true)
     const NEAR_PX = 36
 
+    // 바닥 이동 버튼 노출 여부
+    const [showJumpBtn, setShowJumpBtn] = useState(false)
+
     // ↑ 무한 스크롤 상태
     const [hasMore, setHasMore] = useState(true)         // 더 가져올 과거가 있는지
     const [loadingOlder, setLoadingOlder] = useState(false)
@@ -113,12 +116,16 @@ export default function ChatRoomPage(): JSX.Element {
         if (!list) {
             nearBottomRef.current = true
             try { setAtBottom?.(true) } catch {}
+            // 리스트가 바닥이면 버튼 숨김
+            setShowJumpBtn(false)
             return true
         }
         const diff = list.scrollHeight - list.scrollTop - list.clientHeight
         const near = diff <= NEAR_PX
         nearBottomRef.current = near
         try { setAtBottom?.(near) } catch {}
+        // 리스트가 바닥이 아니면 버튼 노출
+        setShowJumpBtn(!near)
         return near
     }, [setAtBottom])
 
@@ -130,6 +137,13 @@ export default function ChatRoomPage(): JSX.Element {
         if (typeof scrollToFn === 'function') scrollToFn.call(list, { top, behavior })
         else (list as HTMLDivElement).scrollTop = top
     }, [])
+
+    // 추가: 버튼 클릭 시 맨 아래로
+    const jumpToBottom = useCallback(() => {
+        scrollToBottom('smooth')
+        // 스크롤 후 곧바로 상태 갱신(부드럽게 내려가는 동안 잠깐 보이는 걸 줄임)
+        setTimeout(() => { measureNearBottom() }, 120)
+    }, [scrollToBottom, measureNearBottom])
 
     const { setInputHeightRef, onInputBlur } = useViewportKB({
         onStable: () => { if (nearBottomRef.current) scrollToBottom('auto') },
@@ -547,6 +561,17 @@ export default function ChatRoomPage(): JSX.Element {
                 })}
                 <div ref={endRef} id="chat-end-sentinel" />
             </div>
+
+            {showJumpBtn && (
+                <button
+                    type="button"
+                    className="chat__jumpBottom"
+                    aria-label="맨 아래로 이동"
+                    onClick={jumpToBottom}
+                >
+                    ▼ 최신 메시지
+                </button>
+            )}
 
             <div
                 className="chat__input"
