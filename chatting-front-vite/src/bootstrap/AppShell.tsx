@@ -13,8 +13,6 @@ export default function AppShell(): JSX.Element {
     // /chat/:roomId 일 때만 "상세"
     const isChatDetail = !!useMatch('/chat/:roomId')
 
-    console.log(name);
-
     return (
         <div className={`app ${isChatDetail ? 'app--detail' : ''}`}>
             {/* 데스크톱(넓은 화면)에서만 보이는 사이드 내비게이션 */}

@@ -65,6 +65,23 @@ export default function ChatRoomPage(): JSX.Element {
 
     const [inviteOpen, setInviteOpen] = useState(false)
 
+    const [attachOpen, setAttachOpen] = useState(false)
+    const attachBtnRef = useRef<HTMLButtonElement | null>(null)
+    const attachMenuRef = useRef<HTMLDivElement | null>(null)
+
+    // 숨김 input refs
+    const cameraInputRef = useRef<HTMLInputElement | null>(null)
+    const albumInputRef = useRef<HTMLInputElement | null>(null)
+    const fileInputRef = useRef<HTMLInputElement | null>(null)
+
+    // 모바일 판별: 터치 + UA
+    const isMobile = useMemo(() => {
+        const ua = navigator.userAgent || ''
+        const touch = 'ontouchstart' in window || (navigator as any).maxTouchPoints > 0
+        const mobileRe = /Android|iPhone|iPad|iPod/i.test(ua)
+        return touch && mobileRe
+    }, [])
+
     const listRef = useRef<HTMLDivElement | null>(null)
     const endRef = useRef<HTMLDivElement | null>(null)
     const inputRef = useRef<HTMLInputElement | null>(null)
@@ -104,7 +121,7 @@ export default function ChatRoomPage(): JSX.Element {
         return () => { ws.offConnect(onUp); ws.offDisconnect(onDown) }
     }, [])
 
-    // 상대 라벨 (이 코드는 그대로 두되, 헤더 타이틀엔 방 title을 사용해도 됨)
+    // 상대 라벨
     useEffect(() => {
         if (!roomId) return
         let cancelled = false
@@ -227,7 +244,58 @@ export default function ChatRoomPage(): JSX.Element {
         }
     }
 
-    const displayMe = toStr(email) || toStr(userUuid) || '알 수 없음'
+    /* ========== 첨부 처리 ========== */
+
+    // 문서 아무 곳이나 클릭하면 attach 메뉴 닫기
+    useEffect(() => {
+        if (!attachOpen) return
+        const onDown = (ev: MouseEvent) => {
+            const t = ev.target as Node
+            if (attachMenuRef.current?.contains(t) || attachBtnRef.current?.contains(t)) return
+            setAttachOpen(false)
+        }
+        const onEsc = (ev: KeyboardEvent) => { if (ev.key === 'Escape') setAttachOpen(false) }
+        document.addEventListener('mousedown', onDown)
+        document.addEventListener('keydown', onEsc)
+        return () => {
+            document.removeEventListener('mousedown', onDown)
+            document.removeEventListener('keydown', onEsc)
+        }
+    }, [attachOpen])
+
+    const handleFiles = useCallback(async (files: FileList | null, kind: 'image' | 'file') => {
+        if (!files || !roomId) return
+        // TODO: 실제 업로드 API 연동 지점
+        // - 여기서 서버에 업로드 후, 업로드 URL들을 메시지에 담아 보내세요.
+        const names = Array.from(files).map((f) => f.name || (kind === 'image' ? '사진' : '파일'))
+        const label = kind === 'image' ? '사진' : '파일'
+        try {
+            await RoomsAPI.send(roomId, { message: `[${label}] ${names.join(', ')}` })
+            setTimeout(() => scrollToBottom('smooth'), 10)
+        } finally {
+            // 같은 파일 다시 선택 가능하도록 value 초기화
+            if (kind === 'image') {
+                (albumInputRef.current as HTMLInputElement | null)?.setAttribute('value', '')
+                ;(cameraInputRef.current as HTMLInputElement | null)?.setAttribute('value', '')
+            } else {
+                (fileInputRef.current as HTMLInputElement | null)?.setAttribute('value', '')
+            }
+        }
+    }, [roomId, scrollToBottom])
+
+    const onPickCamera = () => {
+        if (!isMobile) return
+        cameraInputRef.current?.click()
+        setAttachOpen(false)
+    }
+    const onPickAlbum = () => {
+        albumInputRef.current?.click()
+        setAttachOpen(false)
+    }
+    const onPickFile = () => {
+        fileInputRef.current?.click()
+        setAttachOpen(false)
+    }
 
     return (
         <div className="chat">
@@ -240,7 +308,6 @@ export default function ChatRoomPage(): JSX.Element {
                             친구 초대
                         </button>
                     )}
-                    {/*<span className="me">사용자: {displayMe}</span>*/}
                 </div>
             </div>
 
@@ -274,6 +341,57 @@ export default function ChatRoomPage(): JSX.Element {
                 ref={setInputHeightRef as any}
                 onTouchMoveCapture={(e) => { e.stopPropagation() }}
             >
+                {/* 첨부(+ 버튼) & 메뉴 */}
+                <div className="attach" style={{ position: 'relative' }}>
+                    <button
+                        ref={attachBtnRef}
+                        type="button"
+                        className="btn btn--icon"
+                        aria-haspopup="menu"
+                        aria-expanded={attachOpen}
+                        title="+"
+                        onClick={() => setAttachOpen((v) => !v)}
+                    >
+                        +
+                    </button>
+
+                    {attachOpen && (
+                        <div
+                            ref={attachMenuRef}
+                            className="attach__menu"
+                            role="menu"
+                            aria-label="첨부"
+                        >
+                            <button
+                                role="menuitem"
+                                className="attach__item"
+                                onClick={onPickCamera}
+                                disabled={!isMobile}
+                                title={isMobile ? '카메라로 촬영' : '모바일에서만 사용 가능'}
+                            >
+                                📷 사진 촬영
+                            </button>
+                            <button
+                                role="menuitem"
+                                className="attach__item"
+                                onClick={onPickAlbum}
+                                title="앨범에서 선택"
+                            >
+                                🖼️ 앨범
+                            </button>
+                            <button
+                                role="menuitem"
+                                className="attach__item"
+                                onClick={onPickFile}
+                                title="파일 선택"
+                            >
+                                📎 파일
+                            </button>
+                        </div>
+                    )}
+                </div>
+
+                {/* 텍스트 입력 */}
                 <input
                     ref={inputRef}
                     value={text}

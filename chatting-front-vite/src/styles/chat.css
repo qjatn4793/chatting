@@ -1,5 +1,5 @@
 /* ================================
-   Chat UI Styles (cleaned)
+   Chat UI Styles (cleaned & deduped)
    ================================ */
 
 :root {
@@ -73,7 +73,6 @@ html, body {
 }
 .chat__header button {
     appearance: none;
-    border: 0;
     padding: 8px 10px;
     border-radius: 10px;
     background: #f1f5f9;
@@ -130,9 +129,7 @@ html, body {
 }
 .chat__msg.me .chat__sender { text-align: right; }
 
-/* ===== Bubble (기본) =====
-   - 줄바꿈 정책은 .chat__text에서만 관리
-   - 여기서는 과도한 강제 줄바꿈 옵션 제거 */
+/* ===== Bubble ===== */
 .chat__bubble {
     width: fit-content;
     max-width: 100%;
@@ -149,14 +146,14 @@ html, body {
     border-radius: 14px 14px 6px 14px;
 }
 
-/* 버블 내부 텍스트: 개행(\n)만 유지, 그 외는 일반 줄바꿈 */
+/* 버블 내부 텍스트 */
 .chat__text {
     display: block;
     white-space: pre-wrap;
-    overflow-wrap: break-word; /* 너무 긴 단어/URL만 경계에서 줄바꿈 */
+    overflow-wrap: break-word; /* 기본 줄바꿈 */
 }
 
-/* ===== Input Bar ===== */
+/* ===== Input Bar (플러스 버튼 포함, 중복 통합) ===== */
 .chat__input {
     position: sticky;
     bottom: 0;
@@ -169,7 +166,8 @@ html, body {
             rgba(255,255,255,.95) 100%
     );
     display: grid;
-    grid-template-columns: 1fr auto;
+    grid-template-columns: auto 1fr auto; /* (+) | input | send */
+    align-items: center;
     gap: 10px;
     border-top: var(--border);
     backdrop-filter: blur(6px);
@@ -197,7 +195,9 @@ html, body {
 }
 .chat__input input::placeholder { color: #789; }
 .chat__input input:focus { border-color: #2a62ff66; box-shadow: none; }
-.chat__input button {
+
+/* 전송 버튼: 입력바의 "직접 자식"만 타겟팅(플러스 버튼 제외) */
+.chat__input > button {
     height: 44px;
     padding: 0 16px;
     border-radius: 12px;
@@ -210,13 +210,67 @@ html, body {
     transition: transform .06s ease, filter .2s ease, box-shadow .2s ease;
     touch-action: manipulation;
 }
-.chat__input button:hover { filter: brightness(1.05); transform: translateY(-1px); }
-.chat__input button:active { transform: translateY(0); }
-.chat__input button:disabled {
+.chat__input > button:hover { filter: brightness(1.05); transform: translateY(-1px); }
+.chat__input > button:active { transform: translateY(0); }
+.chat__input > button:disabled {
     opacity: .55;
     cursor: default;
     filter: grayscale(.2);
     box-shadow: none;
+}
+
+/* 아이콘형(+) 버튼 */
+.btn.btn--icon {
+    width: 44px;
+    height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    padding: 0;
+    background: #f1f5f9;
+    border: var(--border);
+    border-radius: 12px;
+    color: #0f172a;
+}
+.btn.btn--icon:hover { background: #e2e8f0; }
+
+/* 첨부 메뉴 */
+.attach__menu {
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 0;
+    min-width: 180px;
+    background: #fff;
+    border: var(--border);
+    border-radius: 12px;
+    box-shadow: var(--shadow);
+    padding: 6px;
+    display: grid;
+    gap: 4px;
+    z-index: 30;
+}
+.attach__item {
+    appearance: none;
+    width: 100%;
+    text-align: left;
+    background: transparent;
+    border: 0;
+    padding: 10px 12px;
+    border-radius: 10px;
+    cursor: pointer;
+    color: var(--text);
+}
+.attach__item:hover { background: #f1f5f9; }
+.attach__item:disabled {
+    opacity: .55;
+    cursor: not-allowed;
+}
+/* 키보드가 열린 동안에도 메뉴가 입력바 위에 잘 보이도록 */
+.kb-open .attach__menu {
+    position: fixed;
+    left: 12px;
+    bottom: calc(var(--input-h) + 12px + env(safe-area-inset-bottom, 0px));
 }
 
 /* ===== Scrollbar (WebKit) ===== */
@@ -230,35 +284,27 @@ html, body {
 .chat__list::-webkit-scrollbar-track { background: transparent; }
 
 /* ===== Kakao-like: bubble + time in one row ===== */
-/* 행 컨테이너: inline-block으로 내용 크기만큼만 차지 + 절대배치 기준 */
 .chat__row {
     position: relative;
     display: inline-block;
     max-width: 100%;
     vertical-align: bottom;
 }
-
 /* 내 메시지: 시간은 왼쪽 → 왼쪽 패딩으로 공간 예약, 오른쪽은 0 */
-.chat__msg.me .chat__row {
-    padding-right: 0;
-}
-
-/* 버블은 행 폭 안에서만 확장 (패딩으로 시간 영역이 이미 빠짐) */
+.chat__msg.me .chat__row { padding-right: 0; }
+/* 버블은 행 폭 안에서만 확장 */
 .chat__row .chat__bubble {
     display: inline-block;
     vertical-align: bottom;
     max-width: 100%;
 }
-
 /* 긴 토큰(공백 없는 숫자/URL)도 줄바꿈되도록 보강 */
 .chat__row .chat__text {
     display: block;
     white-space: pre-wrap;   /* \n 유지 */
-    /* 줄바꿈 우선순위: anywhere(최강) → break-word(대체) */
     overflow-wrap: anywhere; /* 아주 긴 연속문자도 반드시 줄바꿈 */
     word-break: break-word;  /* Safari/구형 호환 */
 }
-
 /* 시간은 절대배치(레이아웃 영향 X) */
 .chat__time-outside {
     position: absolute;
@@ -269,7 +315,6 @@ html, body {
     line-height: 1;
     color: var(--muted);
 }
-
 .chat__msg.me .chat__time-outside {
     left: auto;
     right: calc(100% + 6px);   /* 내 메시지: 버블 왼쪽 바깥 */
