@@ -417,7 +417,8 @@ CREATE INDEX idx_chat_room_member_user
 
 ---
 
-## 👤 작성자
-
+## 사용 기술
 - Backend & Infra: Spring Boot, JPA, Redis, RabbitMQ, MariaDB
-- Frontend: React, Vite, TypeScript  
+- Frontend: React, Vite, TypeScript
+
+👤 작성자 : 김범수
