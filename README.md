@@ -158,18 +158,18 @@ sequenceDiagram
 
 ```mermaid
 stateDiagram-v2
-    [*] --> LOGGED_OUT
+    [*] --> LOG_OUT
 
-    state LOGGED_OUT {
+    state LOG_OUT {
         [*] --> NoToken
         NoToken --> LoginSuccess: /auth/login OK<br/>{access, refresh}
         LoginSuccess --> [*]
     }
 
-    LOGGED_OUT --> LOGGED_IN: 로그인 성공
-    LOGGED_IN --> LOGGED_OUT: 수동 로그아웃 / refresh 만료
+    LOG_OUT --> LOG_IN: 로그인 성공
+    LOG_IN --> LOG_OUT: 수동 로그아웃 / refresh 만료
 
-    state LOGGED_IN {
+    state LOG_IN {
         [*] --> AccessValid
         AccessValid --> AccessExpired: 시간 경과(exp)
         AccessValid --> AccessValid: 보호 API 호출(Authorization 헤더)
