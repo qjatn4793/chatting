@@ -378,7 +378,7 @@ CREATE INDEX idx_chat_room_member_user
 ## 🔑 로그인 화면
 
 <p align="center">
-  <img src="docs/screenshot-login.png" alt="Login Page" width="300"/>
+  <img src="docs/screenshot-login.png" alt="Login Page" width="100%"/>
 </p>
 
 ---
@@ -386,7 +386,7 @@ CREATE INDEX idx_chat_room_member_user
 ## 👥 친구목록 화면
 
 <p align="center">
-  <img src="docs/screenshot-friends.png" alt="Friends Page" width="300"/>
+  <img src="docs/screenshot-friends.png" alt="Friends Page" width="100%"/>
 </p>
 
 ---
@@ -394,7 +394,7 @@ CREATE INDEX idx_chat_room_member_user
 ## 💬 채팅목록 화면
 
 <p align="center">
-  <img src="docs/screenshot-chat.png" alt="Chat Room" width="300"/>
+  <img src="docs/screenshot-chat.png" alt="Chat Room" width="100%"/>
 </p>
 
 ---
@@ -402,7 +402,7 @@ CREATE INDEX idx_chat_room_member_user
 ## 🖼️ 채팅방 화면
 
 <p align="center">
-  <img src="docs/screenshot-chatRoom.png" alt="Chat Room" width="300"/>
+  <img src="docs/screenshot-chatRoom.png" alt="Chat Room" width="100%"/>
 </p>
 
 ---
