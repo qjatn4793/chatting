@@ -314,30 +314,51 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
                 (payload?.content ?? payload?.message ?? payload?.text ?? payload?.preview ?? '') as string
 
             const isHidden = document.visibilityState === 'hidden' || !document.hasFocus()
-            // const activeRoom = activeRoomRef.current
-            // const atBottom = getAtBottom()
+            const activeRoom = activeRoomRef.current
+            const atBottom = getAtBottom()
 
-            // 배지는 항상 최신
+            // 배지는 최신 유지 (숨김 여부와 무관)
             const total = getTotalUnread()
             setAppBadge(total).catch(() => setFaviconBadge(total))
 
-            // 숨김/비포커스일 때만 웹 알림 표시
+            console.log(isHidden)
+            console.log(activeRoom)
+            console.log(roomId)
+
+            // ⬇️ 숨김/비포커스일 때만 OS 알림
             if (isHidden) {
                 const head = (preview || '(새 메시지)').slice(0, 30)
                 startTitleBlink(head)
                 showWebNotification({
                     title: '새 메시지',
                     body: head,
-                    // ✅ 알림 클릭 시 채팅방으로 이동 (roomId가 있으면)
                     onClick: roomId ? () => navigate(`/chat/${roomId}`) : undefined,
-                    tag: roomId ?? 'chat',   // (원하면) 같은 태그의 알림을 최신 1개만 유지
+                    tag: roomId ?? 'chat',
                 })
                 playPing()
                 return
+            } else {
+                // ✅ 같은 방이고 탭이 보이며(포커스) 사용자가 대화 중이면: 어떤 알림도 띄우지 않음
+                if (activeRoom === roomId) {
+                    // (원한다면 여기서 배지/파비콘도 건드리지 않도록 return 위로 올릴 수 있음)
+                    return
+                } else {
+                    const head = (preview || '(새 메시지)').slice(0, 30)
+                    startTitleBlink(head)
+                    showWebNotification({
+                        title: '새 메시지',
+                        body: head,
+                        onClick: roomId ? () => navigate(`/chat/${roomId}`) : undefined,
+                        tag: roomId ?? 'chat',
+                    })
+                    playPing()
+                    return
+                }
             }
-            // visible 상태에서는 웹 알림을 띄우지 않음
+
+            // visible 상태에서는 웹 알림/사운드 모두 없음
         },
-        [getTotalUnread, navigate] // ✅ navigate 의존성 추가
+        [getAtBottom, getTotalUnread, navigate]
     )
 
     // ======= unread 반영 + attention 트리거 =======
