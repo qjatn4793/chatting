@@ -29,7 +29,7 @@ const isImageAttachment = (a: AttachmentDto) => {
     return /\.(png|jpe?g|gif|webp|bmp|heic|heif|svg)$/.test(name)
 }
 
-// <input type="file">의 File 객체 기준 이미지 판별
+// <input type="file"> 의 File 기준 이미지 판별
 const isImageFile = (f: File) => {
     const ct = (f.type || '').toLowerCase()
     if (ct.startsWith('image/')) return true
@@ -55,12 +55,9 @@ const normalize = (raw: MessageDto): UiMsg => {
 
 const sameUser = (meKeys: string[], msg: UiMsg): boolean => {
     const candidates = [msg.sender, msg.username].map(toStr)
-    for (const me of meKeys) {
-        for (const c of candidates) if (c && eqId(me, c)) return true
-    }
+    for (const me of meKeys) for (const c of candidates) if (c && eqId(me, c)) return true
     return false
 }
-
 const renderSenderLabel = (m: UiMsg, mine: boolean, peerLabel: string): string =>
     mine ? '나' : (m.username || m.sender || m.id || peerLabel || 'unknown')
 
@@ -105,6 +102,10 @@ export default function ChatRoomPage(): JSX.Element {
 
     const nearBottomRef = useRef(true)
     const NEAR_PX = 36
+
+    // ↑ 무한 스크롤 상태
+    const [hasMore, setHasMore] = useState(true)         // 더 가져올 과거가 있는지
+    const [loadingOlder, setLoadingOlder] = useState(false)
 
     const measureNearBottom = useCallback(() => {
         const list = listRef.current as HTMLDivElement | null
@@ -155,19 +156,23 @@ export default function ChatRoomPage(): JSX.Element {
         return () => { cancelled = true }
     }, [roomId, userUuid, email])
 
-    // 진입 시: 읽음 + 히스토리
+    // 진입: 최신 50
     useEffect(() => {
         if (!roomId) return
         let cancelled = false
         setActiveRoom?.(roomId)
+        setHasMore(true)
         ;(async () => {
             try { await RoomsAPI.markRead(roomId) } catch {}
             if (cancelled) return
             try {
                 const res = await RoomsAPI.messages(roomId, 50)
                 const list = (Array.isArray(res.data) ? res.data : []).map(normalize)
+                // ASC 정렬
                 list.sort((a, b) => toMillis(a.createdAt) - toMillis(b.createdAt))
                 setMessages(list)
+                // 첫 페이지가 limit 미만이면 더 없음
+                setHasMore(list.length >= 50)
                 requestAnimationFrame(() => {
                     measureNearBottom()
                     scrollToBottom('auto')
@@ -180,17 +185,66 @@ export default function ChatRoomPage(): JSX.Element {
         }
     }, [roomId, setActiveRoom, scrollToBottom, measureNearBottom])
 
-    // 리스트 스크롤 → 바닥 근접 상태 갱신
+    // 상단 도달 시 더 불러오기
+    const loadOlder = useCallback(async () => {
+        if (!roomId || loadingOlder || !hasMore) return
+        const list = listRef.current
+        if (!list) return
+        const oldest = messages[0]
+        if (!oldest) return
+
+        try {
+            setLoadingOlder(true)
+            const before = toMillis(oldest.createdAt) // 커서: 가장 오래된 메시지의 시각
+            const prevScrollHeight = list.scrollHeight
+
+            const res = await RoomsAPI.messages(roomId, 50, { before })
+            let more = (Array.isArray(res.data) ? res.data : []).map(normalize)
+
+            // 서버는 DESC로 줄 수 있으니 안전하게 ASC로 바꿈
+            more.sort((a, b) => toMillis(a.createdAt) - toMillis(b.createdAt))
+
+            // 중복 제거 후 prepend
+            setMessages((prev) => {
+                const seen = new Set(prev.map(p => p.id))
+                const onlyNew = more.filter(m => !seen.has(m.id))
+                const next = [...onlyNew, ...prev]
+                return next
+            })
+
+            // 스크롤 위치 보정: prepend 후에도 같은 메시지를 보고 있게
+            requestAnimationFrame(() => {
+                const newScrollHeight = list.scrollHeight
+                list.scrollTop = newScrollHeight - prevScrollHeight
+            })
+
+            // 더 이상 없으면 hasMore=false
+            if (more.length < 50) setHasMore(false)
+        } catch (e) {
+            console.error('[loadOlder] failed:', e)
+        } finally {
+            setLoadingOlder(false)
+        }
+    }, [roomId, messages, hasMore, loadingOlder])
+
+    // 리스트 스크롤: 바닥 근접 + 상단 로딩
     useEffect(() => {
         const el = listRef.current
         if (!el) return
-        const onScroll = () => measureNearBottom()
+        const onScroll = () => {
+            // 기존 바닥 근접 추적
+            measureNearBottom()
+            // 최상단 근접 시 과거 로드
+            if (el.scrollTop <= 8) {
+                loadOlder()
+            }
+        }
         el.addEventListener('scroll', onScroll, { passive: true })
         measureNearBottom()
         return () => { el.removeEventListener('scroll', onScroll) }
-    }, [measureNearBottom])
+    }, [measureNearBottom, loadOlder])
 
-    // WS 구독
+    // WS 구독 (신규 메시지 하단 추가/치환)
     useEffect(() => {
         if (!roomId) return
         const markConnected = () => setConnected(true)
@@ -208,22 +262,15 @@ export default function ChatRoomPage(): JSX.Element {
                     return [...prev, msg].sort((a, b) => toMillis(a.createdAt) - toMillis(b.createdAt));
                 }
                 const old = prev[idx];
-
                 const oldAtt = old.attachments?.length ?? 0;
                 const newAtt = msg.attachments?.length ?? 0;
-
-                // 더 풍부한 정보가 오면 교체
                 const shouldReplace =
-                    newAtt > oldAtt ||
-                    toMillis(msg.createdAt) > toMillis(old.createdAt) ||
-                    (msg.content && msg.content !== old.content);
-
+                    newAtt > oldAtt || toMillis(msg.createdAt) > toMillis(old.createdAt) || (msg.content && msg.content !== old.content);
                 if (!shouldReplace) return prev;
-
                 const next = prev.slice();
                 next[idx] = { ...old, ...msg };
                 return next.sort((a, b) => toMillis(a.createdAt) - toMillis(b.createdAt));
-            });
+            })
 
             const mine = sameUser(myKeys, msg)
             requestAnimationFrame(() => {
@@ -254,7 +301,6 @@ export default function ChatRoomPage(): JSX.Element {
         }
     }, [roomId, scrollToBottom, myKeys, measureNearBottom])
 
-    // 메시지 변경 → 바닥 유지
     useEffect(() => {
         if (nearBottomRef.current) scrollToBottom('auto')
     }, [messages, scrollToBottom])
@@ -296,14 +342,15 @@ export default function ChatRoomPage(): JSX.Element {
         }
     }, [attachOpen])
 
-    /** 업로드 + 메시지 갱신 (kind를 넘기지 않음 → 서버가 파일별 자동판단) */
+    /** 업로드 + 메시지 갱신 (FileList 또는 File[] 모두 지원) */
     const handleFiles = useCallback(
-        async (files: FileList | null) => {
-            if (!files || files.length === 0 || !roomId) return
-            const fileArr = Array.from(files)
+        async (input: FileList | File[] | null) => {
+            if (!input || !roomId) return
+            const fileArr = Array.from(input as any as File[])
+            if (fileArr.length === 0) return
 
             try {
-                // 선택 파일들의 실제 타입 기반으로 안내라벨 생성
+                // 실제 타입 기반으로 안내라벨 생성
                 const imgCount = fileArr.filter(isImageFile).length
                 const fileCount = fileArr.length - imgCount
                 let label = '첨부'
@@ -321,7 +368,7 @@ export default function ChatRoomPage(): JSX.Element {
                 const messageId = (msgRes?.data as any)?.messageId || msgRes?.data?.messageId
                 if (messageId == null) throw new Error('메시지 ID를 가져오지 못했습니다.')
 
-                // 2) 업로드(들) — kind를 전달하지 않는다(= undefined)
+                // 2) 업로드(들) — kind 미전달(서버가 파일별로 자동판단)
                 if (fileArr.length === 1) {
                     await RoomsAPI.uploadFile(fileArr[0], undefined, { messageId })
                 } else {
@@ -353,6 +400,29 @@ export default function ChatRoomPage(): JSX.Element {
         },
         [roomId, scrollToBottom]
     )
+
+    // ====== 붙여넣기(Paste) 핸들러: 클립보드 이미지 전송 ======
+    const handlePaste: React.ClipboardEventHandler<HTMLInputElement> = (e) => {
+        const cd = e.clipboardData
+        if (!cd) return
+
+        const items = cd.items || []
+        const files: File[] = []
+        for (const item of Array.from(items)) {
+            // 이미지 Blob이 들어온 항목만 수집
+            if (item.kind === 'file' && item.type && item.type.startsWith('image/')) {
+                const f = item.getAsFile()
+                if (f) files.push(f)
+            }
+        }
+
+        if (files.length > 0) {
+            // 이미지 붙여넣기를 업로드로 전환하고 텍스트 붙여넣기는 막음
+            e.preventDefault()
+            handleFiles(files)
+        }
+        // 이미지가 없으면(텍스트만) 브라우저 기본 동작으로 텍스트가 입력창에 붙습니다.
+    }
 
     const onPickCamera = () => {
         if (!isMobile) return
@@ -403,7 +473,7 @@ export default function ChatRoomPage(): JSX.Element {
 
                                     {/* 이미지 첨부: 썸네일 그리드 */}
                                     {images.length > 0 && (
-                                        <div className="chat__attachGrid">
+                                        <div className={`chat__attachGrid ${images.length === 1 ? 'single' : 'multi'}`}>
                                             {images.map((a) => (
                                                 <a
                                                     key={`${a.id || a.storageKey}-img`}
@@ -537,13 +607,14 @@ export default function ChatRoomPage(): JSX.Element {
                     />
                 </div>
 
-                {/* 텍스트 입력 */}
+                {/* 텍스트 입력 (+ 붙여넣기 이미지 업로드) */}
                 <input
                     ref={inputRef}
                     value={text}
                     onChange={(e) => setText(e.target.value)}
                     onKeyDown={handleKeyDown}
                     onBlur={onInputBlur}
+                    onPaste={handlePaste}
                     placeholder="메시지를 입력하세요"
                     inputMode="text"
                     autoComplete="off"

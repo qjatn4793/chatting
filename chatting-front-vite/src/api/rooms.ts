@@ -58,9 +58,10 @@ export const RoomsAPI = {
     list: (opts?: { signal?: AbortSignal }) =>
         http.get<RoomDto[]>('/rooms', { signal: opts?.signal as any }),
 
-    messages: (roomId: string, limit = 50, opts?: { signal?: AbortSignal }) =>
+    // before 커서를 지원 (epoch ms 또는 ISO string)
+    messages: (roomId: string, limit = 50, opts?: { before?: number | string; signal?: AbortSignal }) =>
         http.get<MessageDto[]>(`/rooms/${encodeURIComponent(roomId)}/messages`, {
-            params: { limit },
+            params: { limit, ...(opts?.before != null ? { before: opts.before } : {}) },
             signal: opts?.signal as any,
         }),
 
@@ -95,7 +96,7 @@ export const RoomsAPI = {
     create: (body: CreateRoomRequest) => http.post<RoomDto>('/rooms', body),
 
     // ============ 파일 업로드 (messageId 전달) ============
-    // kind는 선택값. 이번 변경에서는 프론트에서 넘기지 않아 서버가 파일별로 자동 판별합니다.
+    // kind는 선택값. 현재 프론트에서는 kind를 넘기지 않아 서버가 파일별로 자동판별합니다.
     uploadFile: async (file: File, kind?: 'image' | 'file', opts?: { messageId?: string }): Promise<StoredObject> => {
         const fd = new FormData()
         fd.append('file', file)

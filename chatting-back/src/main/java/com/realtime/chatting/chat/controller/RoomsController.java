@@ -1,5 +1,6 @@
 package com.realtime.chatting.chat.controller;
 
+import java.time.Instant;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
@@ -95,9 +96,11 @@ public class RoomsController {
     /** 히스토리 조회: 인증 불필수라면 그대로, 필수면 Security에서 보장 */
     @GetMapping("/{roomId}/messages")
     public List<MessageDto> history(@PathVariable("roomId") String roomId,
-                                    @RequestParam(name = "limit", defaultValue = "50") int limit) {
+                                    @RequestParam(name = "limit", defaultValue = "50") int limit,
+                                    @RequestParam(name = "before", required = false) Long beforeMillis) {
         int capped = Math.min(200, Math.max(1, limit));
-        return messageService.history(roomId, capped);
+        Instant before = (beforeMillis != null ? Instant.ofEpochMilli(beforeMillis) : null);
+        return messageService.history(roomId, capped, before);
     }
 
     /** 메시지 전송: sender는 내 UUID 문자열로 기록(미읽음/알림 키와 일치) */

@@ -11,6 +11,7 @@ import com.realtime.chatting.storage.entity.ChatAttachment;
 import com.realtime.chatting.storage.repository.ChatAttachmentRepository;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 
 import com.realtime.chatting.chat.dto.MessageDto;
@@ -27,49 +28,56 @@ public class MessageService {
     private final ChatRoomMemberRepository memberRepo;
     private final ChatAttachmentRepository attachmentRepo;
 
+
     @Transactional(readOnly = true)
-    public List<MessageDto> history(String roomId, int limit) {
+    public List<MessageDto> history(String roomId, int limit, @Nullable Instant before) {
         int capped = Math.min(200, Math.max(1, limit));
 
-        // 최신 N개 DESC로 가져오기 (createdAt, id 인덱스 권장)
-        var page = PageRequest.of(0, capped, Sort.by(Sort.Direction.DESC, "createdAt"));
-        List<ChatMessage> msgsDesc = messageRepo.findByRoomIdOrderByCreatedAtDesc(roomId, page);
+        // DESC(최신 먼저), tie-breaker로 id도 같이 정렬하여 안정화
+        var sort = Sort.by(Sort.Direction.DESC, "createdAt").and(Sort.by(Sort.Direction.DESC, "id"));
+        var page = PageRequest.of(0, capped, sort);
+
+        // 커서 유무로 분기
+        List<ChatMessage> msgsDesc = (before == null)
+                ? messageRepo.findByRoomIdOrderByCreatedAtDesc(roomId, page)
+                : messageRepo.findByRoomIdAndCreatedAtBeforeOrderByCreatedAtDesc(roomId, before, page);
+
         if (msgsDesc.isEmpty()) return List.of();
 
-        // messageId 문자열 목록 (엔티티가 UUID면 toString)
+        // messageId 목록 뽑기
         List<String> mids = msgsDesc.stream()
                 .map(ChatMessage::getMessageId)
                 .filter(Objects::nonNull)
-                .collect(Collectors.toList());
+                .toList();
 
-        // 첨부 일괄 조회 → messageId로 그룹핑
-        Map<String, List<AttachmentDto>> grouped;
-        if (!mids.isEmpty()) {
-            List<ChatAttachment> atts = attachmentRepo.findByMessage_MessageIdInOrderByIdAsc(mids);
-            grouped = atts.stream().collect(Collectors.groupingBy(
-                    a -> a.getMessage().getMessageId(),
-                    LinkedHashMap::new,
-                    Collectors.mapping(a -> AttachmentDto.builder()
-                            .id(a.getId())
-                            .storageKey(a.getStorageKey())
-                            .url(a.getPublicUrl())
-                            .size(a.getSize())
-                            .contentType(a.getContentType())
-                            .originalName(a.getOriginalName())
-                            .width(a.getWidth())
-                            .height(a.getHeight())
-                            .createdAt(a.getCreatedAt())
-                            .build(), Collectors.toList())
-            ));
-        } else {
-            grouped = Collections.emptyMap();
-        }
+        // 첨부 한 방에 IN 조회 -> messageId로 그룹핑
+        Map<String, List<AttachmentDto>> grouped = mids.isEmpty()
+                ? Collections.emptyMap()
+                : attachmentRepo.findByMessage_MessageIdInOrderByIdAsc(mids)
+                .stream()
+                .collect(Collectors.groupingBy(
+                        a -> a.getMessage().getMessageId(),
+                        LinkedHashMap::new,
+                        Collectors.mapping(a -> AttachmentDto.builder()
+                                .id(a.getId())
+                                .storageKey(a.getStorageKey())
+                                .url(a.getPublicUrl())
+                                .size(a.getSize())
+                                .contentType(a.getContentType())
+                                .originalName(a.getOriginalName())
+                                .width(a.getWidth())
+                                .height(a.getHeight())
+                                .createdAt(a.getCreatedAt())
+                                .build(), Collectors.toList()
+                        )
+                ));
 
-        // DTO 매핑 (DESC → 나중에 ASC로 뒤집기)
+        // DTO 매핑 (현재 msgsDesc는 DESC)
         List<MessageDto> dtosDesc = msgsDesc.stream().map(m -> MessageDto.builder()
                 .id(m.getId())
                 .roomId(m.getRoomId())
-                .messageId(UUID.fromString(m.getMessageId())) // 문자열 그대로
+                // 엔티티가 String이라면 안전 파싱(잘못된 값 방지)
+                .messageId(parseUuidSafe(m.getMessageId()))
                 .sender(m.getSender())
                 .username(m.getUsername())
                 .content(m.getContent())
@@ -78,7 +86,7 @@ public class MessageService {
                 .build()
         ).toList();
 
-        // 프론트 렌더 순서(과거→현재)에 맞추어 ASC로 정렬해 반환
+        // 프론트가 과거→현재(ASC)로 그리므로 뒤집어서 반환
         List<MessageDto> dtosAsc = new ArrayList<>(dtosDesc);
         dtosAsc.sort(Comparator.comparing(MessageDto::getCreatedAt));
         return dtosAsc;
