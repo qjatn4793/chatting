@@ -104,6 +104,23 @@ services:
       SPRING_RABBITMQ_USERNAME: user
       SPRING_RABBITMQ_PASSWORD: password
 
+      # === 업로드 환경변수 (도커에서 주입) ===
+      # 컨테이너 내부 저장 경로
+      APP_UPLOAD_BASE_DIR: /data/uploads
+      # 업로드 파일을 노출할 API prefix (FileController의 GET 핸들러와 맞춰주세요)
+      APP_UPLOAD_URL_PREFIX: /api/files
+      # 타입별 허용 용량(MB)
+      APP_UPLOAD_MAX_IMAGE_MB: "100"
+      APP_UPLOAD_MAX_FILE_MB: "500"
+
+      # === 멀티파트 전송 한도(글로벌) ===
+      SPRING_SERVLET_MULTIPART_MAX_FILE_SIZE: 500MB
+      SPRING_SERVLET_MULTIPART_MAX_REQUEST_SIZE: 500MB
+
+    volumes:
+      # 호스트 → 컨테이너: 업로드 영속화
+      - uploads-data:/data/uploads
+
   # ===========================
   # Frontend (Vite -> Nginx)
   # ===========================
@@ -135,4 +152,6 @@ volumes:
   rabbitmq-data:
     driver: local
   redis-data:
+    driver: local
+  uploads-data:
     driver: local

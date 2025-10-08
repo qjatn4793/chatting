@@ -1,10 +1,11 @@
+// src/pages/chat/ChatRoomPage.tsx
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import '@/styles/chat.css'
 import { useAuth } from '@/context/AuthContext'
 import { useNotifications } from '@/hooks/useNotifications'
 import { ws } from '@/lib/ws'
-import { RoomsAPI, MessageDto, RoomDto } from '@/api/rooms'
+import { RoomsAPI, MessageDto, RoomDto, AttachmentDto } from '@/api/rooms'
 import { eqId, toStr } from '@/lib/identity'
 import { toMillis, fmtKakaoTimeKST, fmtFullKST } from '@/lib/time'
 import { useViewportKB } from '@/hooks/useViewportKB'
@@ -17,6 +18,23 @@ type UiMsg = {
     username?: string
     content: string
     createdAt: string | number | null
+    attachments?: AttachmentDto[]
+}
+
+// ===== 이미지/파일 판별 유틸 =====
+const isImageAttachment = (a: AttachmentDto) => {
+    const ct = (a.contentType || '').toLowerCase()
+    if (ct.startsWith('image/')) return true
+    const name = `${a.originalName || ''}${a.url || ''}`.toLowerCase()
+    return /\.(png|jpe?g|gif|webp|bmp|heic|heif|svg)$/.test(name)
+}
+
+// <input type="file">의 File 객체 기준 이미지 판별
+const isImageFile = (f: File) => {
+    const ct = (f.type || '').toLowerCase()
+    if (ct.startsWith('image/')) return true
+    const name = (f.name || '').toLowerCase()
+    return /\.(png|jpe?g|gif|webp|bmp|heic|heif|svg)$/.test(name)
 }
 
 const normalize = (raw: MessageDto): UiMsg => {
@@ -31,6 +49,7 @@ const normalize = (raw: MessageDto): UiMsg => {
         username: toStr(raw.username),
         content: toStr(raw.content) || '',
         createdAt: raw.createdAt ?? null,
+        attachments: Array.isArray(raw.attachments) ? raw.attachments : [],
     }
 }
 
@@ -69,12 +88,10 @@ export default function ChatRoomPage(): JSX.Element {
     const attachBtnRef = useRef<HTMLButtonElement | null>(null)
     const attachMenuRef = useRef<HTMLDivElement | null>(null)
 
-    // 숨김 input refs
     const cameraInputRef = useRef<HTMLInputElement | null>(null)
     const albumInputRef = useRef<HTMLInputElement | null>(null)
     const fileInputRef = useRef<HTMLInputElement | null>(null)
 
-    // 모바일 판별: 터치 + UA
     const isMobile = useMemo(() => {
         const ua = navigator.userAgent || ''
         const touch = 'ontouchstart' in window || (navigator as any).maxTouchPoints > 0
@@ -186,10 +203,27 @@ export default function ChatRoomPage(): JSX.Element {
             const msg = normalize(payload)
 
             setMessages((prev) => {
-                if (msg.id && prev.some((p) => p.id === msg.id)) return prev
-                const next = [...prev, msg].sort((a, b) => toMillis(a.createdAt) - toMillis(b.createdAt))
-                return next
-            })
+                const idx = prev.findIndex((p) => p.id === msg.id);
+                if (idx === -1) {
+                    return [...prev, msg].sort((a, b) => toMillis(a.createdAt) - toMillis(b.createdAt));
+                }
+                const old = prev[idx];
+
+                const oldAtt = old.attachments?.length ?? 0;
+                const newAtt = msg.attachments?.length ?? 0;
+
+                // 더 풍부한 정보가 오면 교체
+                const shouldReplace =
+                    newAtt > oldAtt ||
+                    toMillis(msg.createdAt) > toMillis(old.createdAt) ||
+                    (msg.content && msg.content !== old.content);
+
+                if (!shouldReplace) return prev;
+
+                const next = prev.slice();
+                next[idx] = { ...old, ...msg };
+                return next.sort((a, b) => toMillis(a.createdAt) - toMillis(b.createdAt));
+            });
 
             const mine = sameUser(myKeys, msg)
             requestAnimationFrame(() => {
@@ -244,9 +278,8 @@ export default function ChatRoomPage(): JSX.Element {
         }
     }
 
-    /* ========== 첨부 처리 ========== */
+    /* ========== 첨부 처리 (확장자/타입으로 판별, kind 미전달) ========== */
 
-    // 문서 아무 곳이나 클릭하면 attach 메뉴 닫기
     useEffect(() => {
         if (!attachOpen) return
         const onDown = (ev: MouseEvent) => {
@@ -263,25 +296,63 @@ export default function ChatRoomPage(): JSX.Element {
         }
     }, [attachOpen])
 
-    const handleFiles = useCallback(async (files: FileList | null, kind: 'image' | 'file') => {
-        if (!files || !roomId) return
-        // TODO: 실제 업로드 API 연동 지점
-        // - 여기서 서버에 업로드 후, 업로드 URL들을 메시지에 담아 보내세요.
-        const names = Array.from(files).map((f) => f.name || (kind === 'image' ? '사진' : '파일'))
-        const label = kind === 'image' ? '사진' : '파일'
-        try {
-            await RoomsAPI.send(roomId, { message: `[${label}] ${names.join(', ')}` })
-            setTimeout(() => scrollToBottom('smooth'), 10)
-        } finally {
-            // 같은 파일 다시 선택 가능하도록 value 초기화
-            if (kind === 'image') {
-                (albumInputRef.current as HTMLInputElement | null)?.setAttribute('value', '')
-                ;(cameraInputRef.current as HTMLInputElement | null)?.setAttribute('value', '')
-            } else {
-                (fileInputRef.current as HTMLInputElement | null)?.setAttribute('value', '')
+    /** 업로드 + 메시지 갱신 (kind를 넘기지 않음 → 서버가 파일별 자동판단) */
+    const handleFiles = useCallback(
+        async (files: FileList | null) => {
+            if (!files || files.length === 0 || !roomId) return
+            const fileArr = Array.from(files)
+
+            try {
+                // 선택 파일들의 실제 타입 기반으로 안내라벨 생성
+                const imgCount = fileArr.filter(isImageFile).length
+                const fileCount = fileArr.length - imgCount
+                let label = '첨부'
+                if (imgCount > 0 && fileCount === 0) label = '사진'
+                else if (fileCount > 0 && imgCount === 0) label = '파일'
+
+                const names = fileArr.map((f) => f.name || (isImageFile(f) ? '사진' : '파일'))
+                const messageText =
+                    names.length === 1
+                        ? `[${label}] ${names[0]} 업로드`
+                        : `[${label}] ${names.length}개 업로드: ${names.join(', ')}`
+
+                // 1) 메시지 생성 → messageId 획득
+                const msgRes = await RoomsAPI.send(roomId, { message: messageText })
+                const messageId = (msgRes?.data as any)?.messageId || msgRes?.data?.messageId
+                if (messageId == null) throw new Error('메시지 ID를 가져오지 못했습니다.')
+
+                // 2) 업로드(들) — kind를 전달하지 않는다(= undefined)
+                if (fileArr.length === 1) {
+                    await RoomsAPI.uploadFile(fileArr[0], undefined, { messageId })
+                } else {
+                    await RoomsAPI.uploadFiles(fileArr, undefined, { messageId })
+                }
+
+                // 3) 첨부 포함으로 재조회 → state 치환
+                try {
+                    const fresh = await RoomsAPI.getMessage(messageId)
+                    const full = normalize(fresh.data)
+                    setMessages((prev) => {
+                        const idx = prev.findIndex((m) => m.id === full.id)
+                        if (idx === -1) return [...prev, full].sort((a, b) => toMillis(a.createdAt) - toMillis(b.createdAt))
+                        const next = prev.slice()
+                        next[idx] = full
+                        return next
+                    })
+                } catch {}
+
+                setTimeout(() => scrollToBottom('smooth'), 10)
+            } catch (e) {
+                console.error('[handleFiles] upload failed:', e)
+            } finally {
+                // 동일 파일 재선택 가능하도록 모두 리셋
+                if (albumInputRef.current) albumInputRef.current.value = ''
+                if (cameraInputRef.current) cameraInputRef.current.value = ''
+                if (fileInputRef.current) fileInputRef.current.value = ''
             }
-        }
-    }, [roomId, scrollToBottom])
+        },
+        [roomId, scrollToBottom]
+    )
 
     const onPickCamera = () => {
         if (!isMobile) return
@@ -315,13 +386,63 @@ export default function ChatRoomPage(): JSX.Element {
                 {messages.map((m) => {
                     const mine = sameUser(myKeys, m)
                     const label = renderSenderLabel(m, mine, peerLabel)
+
+                    const images = (m.attachments || []).filter(isImageAttachment)
+                    const files  = (m.attachments || []).filter((a) => !isImageAttachment(a))
+                    const hasAttachments = images.length > 0 || files.length > 0
+
                     return (
                         <div key={m.id} className={`chat__msg ${mine ? 'me' : ''}`}>
                             <div className="chat__sender">{label}</div>
                             <div className="chat__row">
                                 <div className="chat__bubble">
-                                    <span className="chat__text">{m.content}</span>
+                                    {/* 텍스트: 첨부가 있으면 숨김 */}
+                                    {!hasAttachments && m.content && (
+                                        <span className="chat__text">{m.content}</span>
+                                    )}
+
+                                    {/* 이미지 첨부: 썸네일 그리드 */}
+                                    {images.length > 0 && (
+                                        <div className="chat__attachGrid">
+                                            {images.map((a) => (
+                                                <a
+                                                    key={`${a.id || a.storageKey}-img`}
+                                                    className="chat__thumb"
+                                                    href={a.url}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    title={a.originalName || 'image'}
+                                                >
+                                                    <img src={a.url} alt={a.originalName || 'image'} loading="lazy" />
+                                                </a>
+                                            ))}
+                                        </div>
+                                    )}
+
+                                    {/* 일반 파일 첨부: 다운로드 링크 */}
+                                    {files.length > 0 && (
+                                        <ul className="chat__files">
+                                            {files.map((a) => (
+                                                <li key={`${a.id || a.storageKey}-file`} className="chat__file">
+                                                    <a
+                                                        href={a.url}
+                                                        download={a.originalName || undefined}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        title={a.originalName || 'download'}
+                                                    >
+                                                        <span className="chat__fileIcon">📎</span>
+                                                        <span className="chat__fileName">{a.originalName || '파일'}</span>
+                                                        {!!a.size && (
+                                                            <span className="chat__fileSize">({Math.ceil(a.size / 1024)} KB)</span>
+                                                        )}
+                                                    </a>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    )}
                                 </div>
+
                                 <time
                                     className="chat__time-outside"
                                     title={fmtFullKST(m.createdAt ?? '')}
@@ -341,7 +462,7 @@ export default function ChatRoomPage(): JSX.Element {
                 ref={setInputHeightRef as any}
                 onTouchMoveCapture={(e) => { e.stopPropagation() }}
             >
-                {/* 첨부(+ 버튼) & 메뉴 */}
+                {/* 첨부(+) */}
                 <div className="attach" style={{ position: 'relative' }}>
                     <button
                         ref={attachBtnRef}
@@ -389,6 +510,31 @@ export default function ChatRoomPage(): JSX.Element {
                             </button>
                         </div>
                     )}
+
+                    {/* 숨김 input (모두 handleFiles로 연결, kind 미전달) */}
+                    <input
+                        ref={cameraInputRef}
+                        type="file"
+                        accept="image/*"
+                        capture="environment"
+                        style={{ display: 'none' }}
+                        onChange={(e) => handleFiles(e.target.files)}
+                    />
+                    <input
+                        ref={albumInputRef}
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        style={{ display: 'none' }}
+                        onChange={(e) => handleFiles(e.target.files)}
+                    />
+                    <input
+                        ref={fileInputRef}
+                        type="file"
+                        multiple
+                        style={{ display: 'none' }}
+                        onChange={(e) => handleFiles(e.target.files)}
+                    />
                 </div>
 
                 {/* 텍스트 입력 */}

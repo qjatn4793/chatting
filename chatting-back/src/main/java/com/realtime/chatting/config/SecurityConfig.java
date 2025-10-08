@@ -35,6 +35,11 @@ public class SecurityConfig {
                 .requestMatchers("/ws/**").permitAll()
                 // 인증/회원가입(프로젝트에 맞게 조정)
                 .requestMatchers("/api/auth/**", "/login", "/register", "/static/profile/**").permitAll()
+
+                .requestMatchers(HttpMethod.GET,  "/api/files/**").permitAll()
+                .requestMatchers(HttpMethod.HEAD, "/api/files/**").permitAll()
+                .requestMatchers(HttpMethod.OPTIONS, "/api/files/**").permitAll()
+
                 // swagger 관련
                 .requestMatchers(
                         "/swagger-ui.html", "/swagger-ui/**",

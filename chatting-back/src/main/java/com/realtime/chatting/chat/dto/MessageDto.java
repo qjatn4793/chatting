@@ -1,8 +1,10 @@
 package com.realtime.chatting.chat.dto;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 import lombok.*;
+
 @Getter 
 @Setter 
 @NoArgsConstructor 
@@ -16,4 +18,5 @@ public class MessageDto {
     private String username;
     private String content;
     private Instant createdAt;
+    private List<AttachmentDto> attachments;
 }

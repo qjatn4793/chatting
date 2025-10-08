@@ -18,6 +18,13 @@ let refreshPromise: Promise<string | null> | null = null
 /** /auth 경로 여부 */
 const isAuthPath = (url?: string) => !!url && /(^|\/)auth(\/|$)/.test(url)
 
+/** FormData 판정 유틸 */
+function isFormDataPayload(data: unknown): boolean {
+    if (typeof FormData !== 'undefined' && data instanceof FormData) return true
+    // 일부 런타임(테스트/폴리필) 대응
+    return Object.prototype.toString.call(data) === '[object FormData]'
+}
+
 /** refresh 호출 */
 async function refreshAccessToken(): Promise<string | null> {
     if (refreshPromise) return refreshPromise
@@ -70,13 +77,12 @@ const http = axios.create({
     baseURL: API_BASE_URL,
 })
 
-/** 요청 인터셉터: Bearer 자동 부착 + 메서드별 Content-Type 지정 */
+/** 요청 인터셉터: Bearer 자동 부착 + (FormData가 아닌 경우에만) JSON Content-Type 기본값 */
 http.interceptors.request.use((config: InternalAxiosRequestConfig) => {
     const token = localStorage.getItem(ACCESS_KEY)
     const anyHeaders = (config.headers ?? {}) as any
 
-    // /auth/** 요청에도 Authorization을 보내도 문제는 없지만, 원하시면 아래 if로 제외 가능:
-    // if (!isAuthPath(config.url)) { ... }
+    // Authorization
     if (token) {
         if (typeof anyHeaders.set === 'function') {
             anyHeaders.set('Authorization', `Bearer ${token}`)
@@ -85,15 +91,28 @@ http.interceptors.request.use((config: InternalAxiosRequestConfig) => {
         }
     }
 
-    const method = (config.method || 'get').toLowerCase()
-    if (['post', 'put', 'patch'].includes(method)) {
-        if (typeof anyHeaders.set === 'function') {
-            if (!anyHeaders.get?.('Content-Type')) anyHeaders.set('Content-Type', 'application/json')
+    // FormData면 Content-Type 제거(브라우저가 boundary 포함해 자동 설정)
+    const dataIsFormData = isFormDataPayload(config.data)
+    if (dataIsFormData) {
+        if (typeof anyHeaders.delete === 'function') {
+            anyHeaders.delete('Content-Type')
         } else {
-            if (!anyHeaders['Content-Type']) anyHeaders['Content-Type'] = 'application/json'
+            delete anyHeaders['Content-Type']
+            delete anyHeaders['content-type']
+        }
+    } else {
+        // JSON 기본값(이미 지정되어 있지 않은 경우에만)
+        const method = (config.method || 'get').toLowerCase()
+        if (['post', 'put', 'patch'].includes(method)) {
+            if (typeof anyHeaders.set === 'function') {
+                if (!anyHeaders.get?.('Content-Type')) anyHeaders.set('Content-Type', 'application/json')
+            } else {
+                if (!anyHeaders['Content-Type']) anyHeaders['Content-Type'] = 'application/json'
+            }
         }
     }
 
+    // 공통 헤더
     if (typeof anyHeaders.set === 'function') {
         anyHeaders.set('X-Requested-With', 'XMLHttpRequest')
     } else {
@@ -155,7 +174,6 @@ http.interceptors.response.use(
             try { localStorage.removeItem(REFRESH_KEY) } catch {}
             window.dispatchEvent(new CustomEvent('auth:logout', { detail: { reason: 'session' } }))
 
-            // 이전엔 Promise.pending으로 두어 UI가 멈췄음 → 이제는 reject 해서 호출 측에서 처리/로딩 해제 가능
             return Promise.reject(error)
         }
 

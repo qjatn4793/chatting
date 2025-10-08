@@ -1,6 +1,7 @@
 package com.realtime.chatting.chat.repository;
 
 import java.util.List;
+import java.util.Optional;
 
 import com.realtime.chatting.chat.repository.projection.LastMessageProjection;
 import org.springframework.data.domain.Pageable;
@@ -23,4 +24,6 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessage, Long> 
         WHERE x.rn = 1
         """, nativeQuery = true)
     List<LastMessageProjection> findLastMessagePerRoom(@Param("roomIds") List<String> roomIds);
+
+    Optional<ChatMessage> findByMessageId(String messageId);
 }

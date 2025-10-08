@@ -324,3 +324,48 @@ html, body {
     :root { --time-space: 52px; }  /* 모바일에서 공간 소폭 축소 */
     .chat__time-outside { font-size: 10.5px; }
 }
+
+/* ===== Attachments ===== */
+.chat__attachGrid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.chat__thumb {
+    display: block;
+    overflow: hidden;
+    border-radius: 12px;
+    border: var(--border);
+    background: #fff;
+}
+.chat__thumb img {
+    display: block;
+    width: 100%;
+    height: 92px;
+    object-fit: cover;
+}
+
+.chat__files {
+    list-style: none;
+    margin: 8px 0 0;
+    padding: 0;
+    display: grid;
+    gap: 6px;
+}
+.chat__file a {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    border: var(--border);
+    background: #f8fafc;
+    text-decoration: none;
+    color: var(--text);
+}
+.chat__file a:hover { background: #eef2f7; }
+.chat__fileIcon { font-size: 16px; }
+.chat__fileName { font-weight: 500; }
+.chat__fileSize { color: var(--muted); font-size: 12px; }
