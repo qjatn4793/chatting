@@ -287,17 +287,12 @@ html, body {
 .chat__row {
     position: relative;
     display: inline-block;
-    max-width: 100%;
+    max-width: 300px;
     vertical-align: bottom;
 }
 /* 내 메시지: 시간은 왼쪽 → 왼쪽 패딩으로 공간 예약, 오른쪽은 0 */
 .chat__msg.me .chat__row { padding-right: 0; }
-/* 버블은 행 폭 안에서만 확장 */
-.chat__row .chat__bubble {
-    display: inline-block;
-    vertical-align: bottom;
-    max-width: 100%;
-}
+
 /* 긴 토큰(공백 없는 숫자/URL)도 줄바꿈되도록 보강 */
 .chat__row .chat__text {
     display: block;
@@ -351,7 +346,7 @@ html, body {
     display: block;
     width: 100%;
     height: auto;                           /* 세로 자동 */
-    max-height: min(60vh, 420px);           /* 너무 길면 스크롤 안깨지게 제한 */
+    max-height: min(60vh, 350px);           /* 너무 길면 스크롤 안깨지게 제한 */
     object-fit: contain;                    /* 잘리지 않게 */
     background: #fff;                       /* 레터박스 배경 */
 }

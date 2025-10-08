@@ -10,6 +10,7 @@ import { eqId, toStr } from '@/lib/identity'
 import { toMillis, fmtKakaoTimeKST, fmtFullKST } from '@/lib/time'
 import { useViewportKB } from '@/hooks/useViewportKB'
 import InviteModal from '@/pages/chat/InviteModal'
+import SmartImage from '@/components/SmartImage'
 
 type UiMsg = {
     id: string
@@ -498,7 +499,12 @@ export default function ChatRoomPage(): JSX.Element {
                                                     rel="noopener noreferrer"
                                                     title={a.originalName || 'image'}
                                                 >
-                                                    <img src={a.url} alt={a.originalName || 'image'} loading="lazy" />
+                                                    <SmartImage
+                                                        src={a.url}
+                                                        alt={a.originalName || 'image'}
+                                                        loading="lazy"
+                                                        className="chat__thumbImg"   // 필요시
+                                                    />
                                                 </a>
                                             ))}
                                         </div>
