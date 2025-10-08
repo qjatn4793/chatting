@@ -135,7 +135,14 @@ const RealtimeProvider: React.FC<Props> = ({ children }) => {
                     }
 
                     // 5) 토스트
-                    if (type === 'MESSAGE' || content) {
+                    const shouldToast =
+                        !isActiveRoom                       // 다른 방이면 토스트 허용
+                        || document.hidden                  // 탭이 숨김이면 허용
+                        || !document.hasFocus()             // 포커스 없으면 허용
+                    // 필요하면 바닥 아님일 때만 허용하려면 아래 주석을 해제
+                    // || (isActiveRoom && !atBottom)   // 같은 방이어도 바닥이 아니면 허용(옵션)
+
+                    if (shouldToast && (type === 'MESSAGE' || content)) {
                         const title = username || (roomId ? `Room ${roomId}` : '새 메시지')
                         const msg = snippet(content, 90)
                         const time = fmtHHMM(createdAt)

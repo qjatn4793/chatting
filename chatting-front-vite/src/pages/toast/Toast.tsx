@@ -25,6 +25,14 @@ export function ToastProvider({ children }: { children: React.ReactNode }): JSX.
     const [items, setItems] = useState<ToastItem[]>([])
     const timers = useRef(new Map<string, any>())
 
+    // ✅ 모바일 판별: 터치(coarse) + UA 보조
+    const isMobile = useMemo(() => {
+        const coarse = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches
+        const ua = (typeof navigator !== 'undefined' && navigator.userAgent) || ''
+        const mobileUA = /Android|iPhone|iPad|iPod|Mobile Safari/i.test(ua)
+        return !!(coarse || mobileUA)
+    }, [])
+
     const remove = (id: string) => {
         setItems(prev => prev.filter(it => it.id !== id))
         const tm = timers.current.get(id)
@@ -36,17 +44,19 @@ export function ToastProvider({ children }: { children: React.ReactNode }): JSX.
 
     const show: ToastCtx['show'] = ({ id, title, username, message, timeText, duration = 3500, onClick }) => {
         const _id = id ?? `t-${Date.now()}-${Math.random().toString(16).slice(2)}`
-        const item: ToastItem = { id: _id, title, /* username가 있다면 포함 */ username, message, timeText, duration, onClick }
 
-        // 1) 기존 토스트/타이머 전부 제거 (항상 1개만 유지)
+        // ✅ 데스크톱/태블릿(포인터 fine)에서는 토스트 표시하지 않음
+        if (!isMobile) return _id
+
+        const item: ToastItem = { id: _id, title, username, message, timeText, duration, onClick }
+
+        // 최신 1개 유지
         timers.current.forEach((tm) => clearTimeout(tm))
         timers.current.clear()
-        setItems([item]) // ← 항상 최신 1개만
+        setItems([item])
 
-        // 2) 새 타이머 등록
         const tm = setTimeout(() => remove(_id), duration)
         timers.current.set(_id, tm)
-
         return _id
     }
 
@@ -63,39 +73,41 @@ export function ToastProvider({ children }: { children: React.ReactNode }): JSX.
     return (
         <Ctx.Provider value={value}>
             {children}
-            <div className="toast-host" aria-live="polite" aria-atomic="true">
-                {items.map((t) => (
-                    <div
-                        key={t.id}
-                        className={`toast ${t.onClick ? 'toast--clickable' : ''}`}
-                        role={t.onClick ? 'button' : undefined}
-                        tabIndex={t.onClick ? 0 : -1}
-                        onClick={(e) => {
-                            // 닫기 버튼 클릭은 무시 (버튼에서 stopPropagation 예정)
-                            if (!t.onClick) return
-                            try { t.onClick() } finally { value.remove(t.id) }
-                        }}
-                        onKeyDown={(e) => {
-                            if (!t.onClick) return
-                            if (e.key === 'Enter' || e.key === ' ') {
-                                e.preventDefault()
+            {/* ✅ 모바일에서만 토스트 DOM 렌더 */}
+            {isMobile && (
+                <div className="toast-host" aria-live="polite" aria-atomic="true">
+                    {items.map((t) => (
+                        <div
+                            key={t.id}
+                            className={`toast ${t.onClick ? 'toast--clickable' : ''}`}
+                            role={t.onClick ? 'button' : undefined}
+                            tabIndex={t.onClick ? 0 : -1}
+                            onClick={(e) => {
+                                if (!t.onClick) return
                                 try { t.onClick() } finally { value.remove(t.id) }
-                            }
-                        }}
-                    >
-                        <div className="toast__title">{t.username ?? t.title ?? '알림'}</div>
-                        {t.message && <div className="toast__msg">{t.message}</div>}
-                        {t.timeText && <div className="toast__time">{t.timeText}</div>}
-                        <button
-                            className="toast__close"
-                            onClick={(e) => { e.stopPropagation(); value.remove(t.id) }}
-                            aria-label="close"
+                            }}
+                            onKeyDown={(e) => {
+                                if (!t.onClick) return
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                    e.preventDefault()
+                                    try { t.onClick() } finally { value.remove(t.id) }
+                                }
+                            }}
                         >
-                            ×
-                        </button>
-                    </div>
-                ))}
-            </div>
+                            <div className="toast__title">{t.username ?? t.title ?? '알림'}</div>
+                            {t.message && <div className="toast__msg">{t.message}</div>}
+                            {t.timeText && <div className="toast__time">{t.timeText}</div>}
+                            <button
+                                className="toast__close"
+                                onClick={(e) => { e.stopPropagation(); value.remove(t.id) }}
+                                aria-label="close"
+                            >
+                                ×
+                            </button>
+                        </div>
+                    ))}
+                </div>
+            )}
         </Ctx.Provider>
     )
 }
