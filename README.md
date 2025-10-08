@@ -375,17 +375,32 @@ CREATE INDEX idx_chat_room_member_user
 
 ---
 
-## 📸 실행 화면
+## 📸 로그인 화면
 
 <p align="center">
   <img src="docs/screenshot-login.png" alt="Login Page" width="300"/>
 </p>
+
+---
+
+## 📸 친구목록 화면
+
 <p align="center">
   <img src="docs/screenshot-friends.png" alt="Friends Page" width="300"/>
 </p>
+
+---
+
+## 📸 채팅목록 화면
+
 <p align="center">
   <img src="docs/screenshot-chat.png" alt="Chat Room" width="300"/>
 </p>
+
+---
+
+## 📸 채팅방 화면
+
 <p align="center">
   <img src="docs/screenshot-chatRoom.png" alt="Chat Room" width="300"/>
 </p>
