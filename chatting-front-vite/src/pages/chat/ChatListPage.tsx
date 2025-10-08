@@ -6,7 +6,7 @@ import { useNotifications } from '@/hooks/useNotifications'
 import { ws } from '@/lib/ws'
 import { RoomsAPI, RoomDto, MessageDto } from '@/api/rooms'
 import { toStr } from '@/lib/identity'
-import {fmtKakaoTimeKST} from '@/lib/time'
+import { fmtKakaoTimeKST } from '@/lib/time'
 import { previewCache } from '@/lib/previewCache'
 
 type UiMsg = {
@@ -170,23 +170,19 @@ export default function ChatListPage(): JSX.Element {
             if (!bulkHydratedOnceRef.current && enriched.length > 0) {
                 bulkHydratedOnceRef.current = true
 
-                // 아직 미리보기가 없는 방들(캐시에도 없고, 직후 fetch 전)
                 const needRooms = enriched
                     .filter((r) => !r.lastMessageAt && !r.lastMessagePreview)
                     .map((r) => r.id)
 
                 if (needRooms.length > 0) {
-                    // 너무 많은 roomIds가 URL을 초과하지 않도록 60~100개 단위로 끊어서 호출
                     const batches = chunk(needRooms, 80)
 
                     for (const ids of batches) {
                         try {
-                            // 백엔드: GET /api/rooms/last-messages?roomIds=a&roomIds=b ...
                             const resp = await RoomsAPI.lastMessagesBulk(ids, { signal: ac.signal })
                             const arr: MessageDto[] = Array.isArray(resp.data) ? resp.data : []
 
                             if (arr.length > 0) {
-                                // 방별 최신 메시지 반영
                                 setRooms((prev) => {
                                     if (!prev || prev.length === 0) return prev
                                     const byId = new Map(prev.map((x) => [x.id, { ...x }]))
@@ -211,14 +207,13 @@ export default function ChatListPage(): JSX.Element {
                                                     null
                                             }
                                         }
-                                        // 캐시 저장 (다음 방문 시 즉시 반영)
                                         previewCache.set(m.roomId, { preview: r.lastMessagePreview, at: r.lastMessageAt, dmPeer: r.dmPeer })
                                     }
                                     return Array.from(byId.values())
                                 })
                             }
                         } catch {
-                            // 일부 배치 실패는 무시(다음 배치/WS/개별 조회로 보완)
+                            /* ignore batch failure */
                         }
                     }
                 }
@@ -272,24 +267,44 @@ export default function ChatListPage(): JSX.Element {
     )
 
     const titleOf = useCallback(
-        (room: RoomDto & { dmPeer?: string | null }): string => {
-            const isDM = (room.type && room.type.toUpperCase() === 'DM') || (room.members?.length || 0) === 2
-            if (isDM) {
-                if (room.dmPeer) return room.dmPeer!
-                const ms = Array.isArray(room.members) ? room.members : []
-                const other = ms.find((m) => toStr(m) && toStr(m) !== email)
-                if (other) return String(other)
-            }
-            return room.id || '대화방'
+        (room: RoomDto): string => {
+            const t = (room as any)?.title
+            return (t && String(t).trim().length > 0) ? String(t) : '방 제목 없음'
         },
-        [meKey, email]
+        []
     )
 
     const { unread: unreadState } = useNotifications() as any
 
+    /** ▶ 대화방 생성: 간단하게 prompt()로 제목·멤버 받아 생성 */
+    const onCreateRoom = useCallback(async () => {
+        const title = (window.prompt('방 제목을 입력하세요 (예: 프로젝트A)') || '').trim()
+        if (!title) return
+
+        try {
+            const { data: newRoom } = await RoomsAPI.create({ type: 'GROUP', title })
+            // 리스트에 즉시 prepend
+            setRooms((prev) => {
+                const exists = prev.some((r) => r.id === newRoom.id)
+                const base = exists ? prev : [{ ...newRoom, lastMessageAt: null, lastMessagePreview: null, dmPeer: null }, ...prev]
+                // WS 구독 동기화
+                syncRoomSubscriptions(base.map((r) => r.id))
+                return base
+            })
+            // 바로 이동
+            navigate(`/chat/${encodeURIComponent(newRoom.id)}`)
+        } catch (e: any) {
+            const msg = e?.response?.data?.message || '대화방 생성에 실패했습니다.'
+            alert(msg)
+        }
+    }, [navigate, syncRoomSubscriptions])
+
     return (
         <div className="friends">
-            <h2>채팅</h2>
+            <div className="friends__headerRow">
+                <h2>채팅</h2>
+                <button className="btn btn--primary" onClick={onCreateRoom}>＋ 대화방 생성</button>
+            </div>
 
             {loading && <div className="friends__row">불러오는 중...</div>}
             {error && <div className="friends__row">{error}</div>}

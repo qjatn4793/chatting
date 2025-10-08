@@ -12,4 +12,5 @@ public class RoomDto {
     private String type;
     private Instant createdAt;
     private List<String> members;
+    private String title;
 }

@@ -8,6 +8,7 @@ import { RoomsAPI, MessageDto, RoomDto } from '@/api/rooms'
 import { eqId, toStr } from '@/lib/identity'
 import { toMillis, fmtKakaoTimeKST, fmtFullKST } from '@/lib/time'
 import { useViewportKB } from '@/hooks/useViewportKB'
+import InviteModal from '@/pages/chat/InviteModal'
 
 type UiMsg = {
     id: string
@@ -62,11 +63,12 @@ export default function ChatRoomPage(): JSX.Element {
     const [text, setText] = useState('')
     const [connected, setConnected] = useState<boolean>(ws.isConnected())
 
+    const [inviteOpen, setInviteOpen] = useState(false)
+
     const listRef = useRef<HTMLDivElement | null>(null)
-    const endRef = useRef<HTMLDivElement | null>(null) // 남겨두지만 직접 scroll을 우선 사용
+    const endRef = useRef<HTMLDivElement | null>(null)
     const inputRef = useRef<HTMLInputElement | null>(null)
 
-    // “바닥 근접” 상태 추적 → 새 메시지 시 강제 점프 조건
     const nearBottomRef = useRef(true)
     const NEAR_PX = 36
 
@@ -79,32 +81,17 @@ export default function ChatRoomPage(): JSX.Element {
         return near
     }, [])
 
-    // 컨테이너 직접 스크롤 방식 (iOS fixed+sticky 조합에서도 안정)
     const scrollToBottom = useCallback((behavior: ScrollBehavior = 'auto') => {
         const list = listRef.current as HTMLDivElement | null
         if (!list) return
-
-        // 안전한 함수 체크 (in 연산자 X)
-        const scrollToFn = (list as any).scrollTo as
-            | ((opts: ScrollToOptions) => void)
-            | undefined
-
+        const scrollToFn = (list as any).scrollTo as ((opts: ScrollToOptions) => void) | undefined
         const top = list.scrollHeight
-
-        if (typeof scrollToFn === 'function') {
-            // call로 this 바인딩 명시
-            scrollToFn.call(list, { top, behavior })
-        } else {
-            // fallback
-            ;(list as HTMLDivElement).scrollTop = top
-        }
+        if (typeof scrollToFn === 'function') scrollToFn.call(list, { top, behavior })
+        else (list as HTMLDivElement).scrollTop = top
     }, [])
 
     const { setInputHeightRef, onInputBlur } = useViewportKB({
-        onStable: () => {
-            // 레이아웃 안정 후: 사용자가 바닥 근처였으면 유지
-            if (nearBottomRef.current) scrollToBottom('auto')
-        },
+        onStable: () => { if (nearBottomRef.current) scrollToBottom('auto') },
         kbThreshold: 80,
         blockDrag: true,
     })
@@ -117,7 +104,7 @@ export default function ChatRoomPage(): JSX.Element {
         return () => { ws.offConnect(onUp); ws.offDisconnect(onDown) }
     }, [])
 
-    // 상대 라벨 (members에서 나 제외)
+    // 상대 라벨 (이 코드는 그대로 두되, 헤더 타이틀엔 방 title을 사용해도 됨)
     useEffect(() => {
         if (!roomId) return
         let cancelled = false
@@ -148,7 +135,7 @@ export default function ChatRoomPage(): JSX.Element {
                 list.sort((a, b) => toMillis(a.createdAt) - toMillis(b.createdAt))
                 setMessages(list)
                 requestAnimationFrame(() => {
-                    measureNearBottom() // 초기엔 항상 true가 되도록
+                    measureNearBottom()
                     scrollToBottom('auto')
                 })
             } catch {}
@@ -178,7 +165,6 @@ export default function ChatRoomPage(): JSX.Element {
         setConnected(ws.isConnected())
 
         const unsub = ws.subscribe(`/topic/rooms/${roomId}`, (payload: MessageDto) => {
-            // 👇 메시지 추가 "이전"의 바닥 근접 여부를 기준으로 유지
             const wasNearBottom = measureNearBottom()
             const msg = normalize(payload)
 
@@ -189,13 +175,9 @@ export default function ChatRoomPage(): JSX.Element {
             })
 
             const mine = sameUser(myKeys, msg)
-
-            // DOM 반영 후 두 번의 rAF로 안정적으로 스크롤 (iOS에서 paint 이후 보장)
             requestAnimationFrame(() => {
                 requestAnimationFrame(() => {
-                    if (mine || wasNearBottom) {
-                        scrollToBottom('smooth')
-                    }
+                    if (mine || wasNearBottom) scrollToBottom('smooth')
                 })
             })
         })
@@ -221,7 +203,7 @@ export default function ChatRoomPage(): JSX.Element {
         }
     }, [roomId, scrollToBottom, myKeys, measureNearBottom])
 
-    // 메시지 변경 → 내가 보낸 뒤에는 항상 바닥, 그 외에는 nearBottom이면 유지
+    // 메시지 변경 → 바닥 유지
     useEffect(() => {
         if (nearBottomRef.current) scrollToBottom('auto')
     }, [messages, scrollToBottom])
@@ -233,7 +215,6 @@ export default function ChatRoomPage(): JSX.Element {
             await RoomsAPI.send(roomId, { message: body })
             setText('')
             inputRef.current?.focus({ preventScroll: true })
-            // 내가 보낸 메시지는 항상 아래로
             setTimeout(() => scrollToBottom('smooth'), 10)
         } catch {}
     }, [roomId, text, scrollToBottom])
@@ -254,7 +235,14 @@ export default function ChatRoomPage(): JSX.Element {
             <div className="chat__header">
                 <button onClick={() => nav('/chat')}>← chat</button>
                 <h2>{headerTitle}</h2>
-                <span className="me">사용자: {displayMe}</span>
+                <div className="chat__headerRight">
+                    {!!roomId && (
+                        <button className="btn btn--sm" onClick={() => setInviteOpen(true)}>
+                            친구 초대
+                        </button>
+                    )}
+                    <span className="me">사용자: {displayMe}</span>
+                </div>
             </div>
 
             <div className="chat__list" id="chat-list" ref={listRef}>
@@ -264,13 +252,10 @@ export default function ChatRoomPage(): JSX.Element {
                     return (
                         <div key={m.id} className={`chat__msg ${mine ? 'me' : ''}`}>
                             <div className="chat__sender">{label}</div>
-
-                            {/* 버블과 시간을 한 줄로 */}
                             <div className="chat__row">
                                 <div className="chat__bubble">
                                     <span className="chat__text">{m.content}</span>
                                 </div>
-
                                 <time
                                     className="chat__time-outside"
                                     title={fmtFullKST(m.createdAt ?? '')}
@@ -285,14 +270,10 @@ export default function ChatRoomPage(): JSX.Element {
                 <div ref={endRef} id="chat-end-sentinel" />
             </div>
 
-            {/* 입력 바: 훅이 ref로 높이를 실측하고, 키보드 시 fixed 전환됨 */}
             <div
                 className="chat__input"
                 ref={setInputHeightRef as any}
-                onTouchMoveCapture={(e) => {
-                    // 방어적으로 한 번 더 상위 전파를 막아 iOS 체이닝 완화
-                    e.stopPropagation()
-                }}
+                onTouchMoveCapture={(e) => { e.stopPropagation() }}
             >
                 <input
                     ref={inputRef}
@@ -315,6 +296,15 @@ export default function ChatRoomPage(): JSX.Element {
                     Send
                 </button>
             </div>
+
+            {/* 초대 모달 */}
+            {roomId && (
+                <InviteModal
+                    open={inviteOpen}
+                    onClose={() => setInviteOpen(false)}
+                    roomId={roomId}
+                />
+            )}
         </div>
     )
 }

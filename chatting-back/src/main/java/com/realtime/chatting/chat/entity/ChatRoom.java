@@ -22,4 +22,7 @@ public class ChatRoom {
 
     @Column(nullable = false, updatable = false)
     private Instant createdAt = Instant.now();
+
+    @Column(length = 200)
+    private String title;
 }

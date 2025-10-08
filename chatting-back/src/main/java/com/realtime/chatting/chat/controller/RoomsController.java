@@ -2,10 +2,11 @@ package com.realtime.chatting.chat.controller;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
-import com.realtime.chatting.chat.dto.OpenDmByIdentifierRequest;
+import com.realtime.chatting.chat.dto.*;
 import com.realtime.chatting.chat.service.MessageService;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.http.HttpStatus;
@@ -13,9 +14,6 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
-import com.realtime.chatting.chat.dto.RoomDto;
-import com.realtime.chatting.chat.dto.MessageDto;
-import com.realtime.chatting.chat.dto.SendMessageRequest;
 import com.realtime.chatting.chat.service.RoomService;
 import com.realtime.chatting.config.RabbitConfig;
 import com.realtime.chatting.friend.service.FriendService;
@@ -41,6 +39,38 @@ public class RoomsController {
     public List<RoomDto> myRooms(Authentication auth) {
         UUID myId = UUID.fromString(auth.getName());     // sub=UUID
         return roomService.myRooms(String.valueOf(myId));
+    }
+
+    /** 방 단건 조회: 멤버만 열람 허용 (InviteModal에서 사용) */
+    @GetMapping("/{roomId}")
+    public RoomDto getRoom(@PathVariable("roomId") String roomId, Authentication auth) {
+        UUID myId = UUID.fromString(auth.getName());
+        return roomService.getRoomForMember(myId, roomId);
+    }
+
+    /** 그룹 방 생성: 메시지 없이 먼저 방을 만든 뒤 필요 시 멤버 초대 */
+    @PostMapping
+    public RoomDto createRoom(@Valid @RequestBody CreateRoomRequest req,
+                              Authentication auth) {
+        UUID myId = UUID.fromString(auth.getName());
+        String type = (req.type() == null ? "GROUP" : req.type().trim().toUpperCase());
+        if (!"GROUP".equals(type)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "only GROUP creation is supported");
+        }
+        String title = req.title() == null ? "" : req.title().trim();
+        if (title.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "title is required");
+        }
+
+        List<UUID> inviteeIds = (req.identifiers() == null ? List.<String>of() : req.identifiers())
+                .stream()
+                .map(idf -> friendService.findUserByFlexibleIdentifier(idf).map(User::getId).orElse(null))
+                .filter(java.util.Objects::nonNull)
+                .distinct()
+                .limit(200)
+                .toList();
+
+        return roomService.createGroupRoom(myId, title, inviteeIds);
     }
 
     /** DM 개설 */
@@ -129,5 +159,15 @@ public class RoomsController {
         }
 
         return messageService.lastMessagesBulk(myId, roomIds);
+    }
+
+    /** 멤버 초대*/
+    @PostMapping("/{roomId}/invite")
+    public InviteResponse invite(@PathVariable("roomId") String roomId,
+                                 @RequestBody InviteRequest req,
+                                 Authentication auth) {
+        UUID myId = UUID.fromString(auth.getName());
+        List<String> ids = (req != null && req.identifiers() != null) ? req.identifiers() : List.of();
+        return roomService.inviteMembers(myId, roomId, ids);
     }
 }

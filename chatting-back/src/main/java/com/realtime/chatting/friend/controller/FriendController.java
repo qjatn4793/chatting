@@ -22,7 +22,7 @@ public class FriendController {
     private final FriendService friendService;
     private final UserRepository userRepository;
 
-    /** 내 친구 목록(이메일/UUID 어떤 포맷을 쓸지는 팀 규칙에 맞춰) */
+    /** 내 친구 목록(UUID 어떤 포맷을 쓸지는 팀 규칙에 맞춰) */
     @GetMapping
     public List<FriendBriefDto> myFriends(Authentication auth) {
         UUID myId = UUID.fromString(auth.getName());

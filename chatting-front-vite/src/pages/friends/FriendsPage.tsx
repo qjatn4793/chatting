@@ -45,8 +45,8 @@ export default function FriendsPage(): JSX.Element {
         const ctrl = new AbortController()
         abortRef.current = ctrl
         try {
-            const res = await FriendsAPI.list({ signal: ctrl.signal })
-            if (res.status === 200) setList(Array.isArray(res.data) ? res.data : [])
+            const arr = await FriendsAPI.list({ signal: ctrl.signal })
+            setList(Array.isArray(arr) ? arr : [])
         } catch (e: any) {
             const canceled = e?.name === 'CanceledError' || e?.code === 'ERR_CANCELED' || e?.message === 'canceled'
             if (!canceled) {
@@ -90,15 +90,13 @@ export default function FriendsPage(): JSX.Element {
                     if (hasFromTarget) {
                         setError('상대가 이미 보낸 요청이 있어요. “받은 요청”에서 수락하세요.')
                     } else {
-                        const listRes = await FriendsAPI.list()
-                        if (listRes.status !== 304) {
-                            const exists = (Array.isArray(listRes.data) ? listRes.data : []).some((it: any) => {
-                                const id = toStr(it?.id)?.toLowerCase()
-                                const em = toStr(it?.email)?.toLowerCase()
-                                return id === idf.toLowerCase() || em === idf.toLowerCase()
-                            })
-                            setError(exists ? '이미 친구예요.' : errMsg(e, fallback))
-                        } else setError(errMsg(e, fallback))
+                        const listArr = await FriendsAPI.list()
+                        const exists = (Array.isArray(listArr) ? listArr : []).some((it: any) => {
+                            const id = toStr(it?.id)?.toLowerCase()
+                            const em = toStr(it?.email)?.toLowerCase()
+                            return id === idf.toLowerCase() || em === idf.toLowerCase()
+                        })
+                        setError(exists ? '이미 친구예요.' : errMsg(e, fallback))
                     }
                 } catch { setError(errMsg(e, fallback)) }
             } else if (st === 404) setError('해당 사용자를 찾을 수 없습니다.')
