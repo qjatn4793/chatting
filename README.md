@@ -313,17 +313,16 @@ sequenceDiagram
     actor M as 멤버들(같은 방의 다른 사용자들)
 
     Note over FE,ST: 1) 파일 업로드(Pre-signed URL 또는 /files)
-    FE->>API: POST /files/presign {fileName, contentType, size}
-    API-->>FE: {uploadUrl, publicUrl, storageKey}
+    FE->>API: POST /files/presign (fileName, contentType, size)
+    API-->>FE: 200 OK {uploadUrl, publicUrl, storageKey}
     FE->>ST: PUT uploadUrl (binary upload)
     ST-->>FE: 200 OK
 
     Note over FE,API: 2) 메시지 생성(첨부 메타 포함)
-    FE->>API: POST /rooms/{roomId}/messages
-      { type: "FILE", content: "", attachments: [{publicUrl, storageKey, ...}] }
+    FE->>API: POST /rooms/{roomId}/messages (type=FILE, attachments[])
     API->>DB: Message + Attachment insert (트랜잭션)
-    API->>MQ: MESSAGE_CREATED(type=FILE)
-    MQ->>WS: /topic/rooms.{roomId}
+    API->>MQ: MESSAGE_CREATED (type=FILE)
+    MQ->>WS: publish /topic/rooms.{roomId}
     WS-->>M: 파일/이미지 썸네일 포함 수신
     API-->>FE: 201 Created
 ```
