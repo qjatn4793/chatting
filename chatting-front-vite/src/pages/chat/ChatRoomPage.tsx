@@ -119,12 +119,15 @@ export default function ChatRoomPage(): JSX.Element {
     const [hasMore, setHasMore] = useState(true)         // 더 가져올 과거가 있는지
     const [loadingOlder, setLoadingOlder] = useState(false)
 
+    // ----- iOS 한글 IME 유령문자 대응용 ref -----
+    const composingRef = useRef(false)
+    const sentJustNowRef = useRef(false)
+
     const measureNearBottom = useCallback(() => {
         const list = listRef.current as HTMLDivElement | null
         if (!list) {
             nearBottomRef.current = true
             try { setAtBottom?.(true) } catch {}
-            // 리스트가 바닥이면 버튼 숨김
             setShowJumpBtn(false)
             return true
         }
@@ -132,7 +135,6 @@ export default function ChatRoomPage(): JSX.Element {
         const near = diff <= NEAR_PX
         nearBottomRef.current = near
         try { setAtBottom?.(near) } catch {}
-        // 리스트가 바닥이 아니면 버튼 노출
         setShowJumpBtn(!near)
         return near
     }, [setAtBottom])
@@ -149,7 +151,6 @@ export default function ChatRoomPage(): JSX.Element {
     // 추가: 버튼 클릭 시 맨 아래로
     const jumpToBottom = useCallback(() => {
         scrollToBottom('smooth')
-        // 스크롤 후 곧바로 상태 갱신(부드럽게 내려가는 동안 잠깐 보이는 걸 줄임)
         setTimeout(() => { measureNearBottom() }, 120)
     }, [scrollToBottom, measureNearBottom])
 
@@ -157,8 +158,8 @@ export default function ChatRoomPage(): JSX.Element {
         onStable: () => { if (nearBottomRef.current) scrollToBottom('auto') },
         kbThreshold: 80,
         blockDrag: true,
-        applyKbOniOS: false,      // ✅ iOS에서는 입력창 위치 보정(—kb) 끔
-        applyKbOnAndroid: true,   // ✅ AOS만 보정 적용
+        applyKbOniOS: false,      // iOS에서는 입력창 위치 보정 끔
+        applyKbOnAndroid: true,   // AOS만 보정
     })
 
     // iOS 전용: 입력창 고정 모드 토글(자동 스크롤 억제용)
@@ -177,7 +178,6 @@ export default function ChatRoomPage(): JSX.Element {
             body.style.overflow = 'hidden'
             root.classList.add('ios-kb')
 
-            // 🔧 레이아웃이 고정되는 프레임 뒤에 바닥 한번 보정
             requestAnimationFrame(() => {
                 if (nearBottomRef.current) scrollToBottom('auto')
             })
@@ -191,10 +191,8 @@ export default function ChatRoomPage(): JSX.Element {
             body.style.width = ''
             body.style.overflow = ''
             root.classList.remove('ios-kb')
-            // 원래 스크롤 위치 복원
             window.scrollTo(0, savedScrollYRef.current || 0)
 
-            // 🔧 Safari 툴바 복원 애니메이션 끝나갈 때 한 번 더 보정
             setTimeout(() => {
                 if (nearBottomRef.current) scrollToBottom('auto')
             }, 180)
@@ -223,7 +221,7 @@ export default function ChatRoomPage(): JSX.Element {
         const list = listRef.current
         if (!list || !(window as any).ResizeObserver) return
 
-        const ro = new (window as any).ResizeObserver((entries: any) => {
+        const ro = new (window as any).ResizeObserver(() => {
             if (nearBottomRef.current) {
                 requestAnimationFrame(() => scrollToBottom('auto'))
             }
@@ -270,15 +268,12 @@ export default function ChatRoomPage(): JSX.Element {
             try {
                 const res = await RoomsAPI.messages(roomId, 50)
                 const list = (Array.isArray(res.data) ? res.data : []).map(normalize)
-                // ASC 정렬
                 list.sort((a, b) => toMillis(a.createdAt) - toMillis(b.createdAt))
                 setMessages(list)
-                // 첫 페이지가 limit 미만이면 더 없음
                 setHasMore(list.length >= 50)
                 requestAnimationFrame(() => {
                     measureNearBottom()
                     scrollToBottom('auto')
-                    // iOS/Safari에서 한 텀 더 보정
                     setTimeout(() => { if (nearBottomRef.current) scrollToBottom('auto') }, 60)
                 })
             } catch {}
@@ -289,7 +284,7 @@ export default function ChatRoomPage(): JSX.Element {
         }
     }, [roomId, setActiveRoom, scrollToBottom, measureNearBottom])
 
-    // 리스트 스크롤 → 바닥 근접 상태 갱신 (기존에 + 전역 통지)
+    // 리스트 스크롤 → 바닥 근접 상태 갱신
     useEffect(() => {
         const el = listRef.current
         if (!el) return
@@ -309,16 +304,13 @@ export default function ChatRoomPage(): JSX.Element {
 
         try {
             setLoadingOlder(true)
-            const before = toMillis(oldest.createdAt) // 커서: 가장 오래된 메시지의 시각
+            const before = toMillis(oldest.createdAt)
             const prevScrollHeight = list.scrollHeight
 
             const res = await RoomsAPI.messages(roomId, 50, { before })
             let more = (Array.isArray(res.data) ? res.data : []).map(normalize)
-
-            // 서버는 DESC로 줄 수 있으니 안전하게 ASC로 바꿈
             more.sort((a, b) => toMillis(a.createdAt) - toMillis(b.createdAt))
 
-            // 중복 제거 후 prepend
             setMessages((prev) => {
                 const seen = new Set(prev.map(p => p.id))
                 const onlyNew = more.filter(m => !seen.has(m.id))
@@ -326,13 +318,11 @@ export default function ChatRoomPage(): JSX.Element {
                 return next
             })
 
-            // 스크롤 위치 보정: prepend 후에도 같은 메시지를 보고 있게
             requestAnimationFrame(() => {
                 const newScrollHeight = list.scrollHeight
                 list.scrollTop = newScrollHeight - prevScrollHeight
             })
 
-            // 더 이상 없으면 hasMore=false
             if (more.length < 50) setHasMore(false)
         } catch (e) {
             console.error('[loadOlder] failed:', e)
@@ -346,9 +336,7 @@ export default function ChatRoomPage(): JSX.Element {
         const el = listRef.current
         if (!el) return
         const onScroll = () => {
-            // 기존 바닥 근접 추적
             measureNearBottom()
-            // 최상단 근접 시 과거 로드
             if (el.scrollTop <= 8) {
                 loadOlder()
             }
@@ -399,7 +387,7 @@ export default function ChatRoomPage(): JSX.Element {
                 ws.ensureConnected()
                 if (nearBottomRef.current) {
                     scrollToBottom('auto')
-                    setTimeout(() => scrollToBottom('auto'), 60) // 한 번 더 보정
+                    setTimeout(() => scrollToBottom('auto'), 60)
                 }
             }
         }
@@ -422,19 +410,53 @@ export default function ChatRoomPage(): JSX.Element {
         if (nearBottomRef.current) scrollToBottom('auto')
     }, [messages, scrollToBottom])
 
+    // ===== iOS IME 유령문자 방지: 조합 이벤트 핸들러 =====
+    const handleCompositionStart: React.CompositionEventHandler<HTMLInputElement> = () => {
+        composingRef.current = true
+    }
+    const handleCompositionEnd: React.CompositionEventHandler<HTMLInputElement> = () => {
+        composingRef.current = false
+        if (sentJustNowRef.current) {
+            sentJustNowRef.current = false
+            setText('')
+            const el = inputRef.current
+            if (el) el.value = ''
+        }
+    }
+    const handleBeforeInput: React.FormEventHandler<HTMLInputElement> = (e: any) => {
+        // 전송 직후 늦게 들어오는 insertFromComposition 무시
+        if (sentJustNowRef.current && (e?.nativeEvent?.inputType || '').includes('insertFromComposition')) {
+            e.preventDefault?.()
+        }
+    }
+
     const send = useCallback(async () => {
         const body = text.trim()
         if (!body || !roomId) return
         try {
+            sentJustNowRef.current = true
+            const el = inputRef.current
+            // 조합 강제 종료: blur + DOM value 비우기
+            if (el) { el.blur(); el.value = '' }
+
             await RoomsAPI.send(roomId, { message: body })
+
             setText('')
-            inputRef.current?.focus({ preventScroll: true })
+
+            // 다음 프레임에 포커스 복원(스크롤 점프 방지)
+            requestAnimationFrame(() => {
+                inputRef.current?.focus({ preventScroll: true })
+                // 유령 커밋 플래그 해제
+                setTimeout(() => { sentJustNowRef.current = false }, 0)
+            })
+
             setTimeout(() => scrollToBottom('smooth'), 10)
         } catch {}
     }, [roomId, text, scrollToBottom])
 
     const handleKeyDown: React.KeyboardEventHandler<HTMLInputElement> = (e) => {
-        const composing = (e as any).isComposing || (e.nativeEvent as any)?.isComposing
+        const native = e.nativeEvent as any
+        const composing = (e as any).isComposing || native?.isComposing || composingRef.current
         if (!composing && e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault()
             send()
@@ -467,7 +489,6 @@ export default function ChatRoomPage(): JSX.Element {
             if (fileArr.length === 0) return
 
             try {
-                // 실제 타입 기반으로 안내라벨 생성
                 const imgCount = fileArr.filter(isImageFile).length
                 const fileCount = fileArr.length - imgCount
                 let label = '첨부'
@@ -509,7 +530,6 @@ export default function ChatRoomPage(): JSX.Element {
             } catch (e) {
                 console.error('[handleFiles] upload failed:', e)
             } finally {
-                // 동일 파일 재선택 가능하도록 모두 리셋
                 if (albumInputRef.current) albumInputRef.current.value = ''
                 if (cameraInputRef.current) cameraInputRef.current.value = ''
                 if (fileInputRef.current) fileInputRef.current.value = ''
@@ -526,7 +546,6 @@ export default function ChatRoomPage(): JSX.Element {
         const items = cd.items || []
         const files: File[] = []
         for (const item of Array.from(items)) {
-            // 이미지 Blob이 들어온 항목만 수집
             if (item.kind === 'file' && item.type && item.type.startsWith('image/')) {
                 const f = item.getAsFile()
                 if (f) files.push(f)
@@ -534,11 +553,9 @@ export default function ChatRoomPage(): JSX.Element {
         }
 
         if (files.length > 0) {
-            // 이미지 붙여넣기를 업로드로 전환하고 텍스트 붙여넣기는 막음
             e.preventDefault()
             handleFiles(files)
         }
-        // 이미지가 없으면(텍스트만) 브라우저 기본 동작으로 텍스트가 입력창에 붙습니다.
     }
 
     const onPickCamera = () => {
@@ -600,6 +617,7 @@ export default function ChatRoomPage(): JSX.Element {
                                                     rel="noopener noreferrer"
                                                     title={a.originalName || 'image'}
                                                 >
+                                                    {/* onLoad는 제거(타입 에러/중복 스크롤 보정 회피). ResizeObserver로 충분 */}
                                                     <SmartImage
                                                         src={a.url}
                                                         alt={a.originalName || 'image'}
@@ -749,11 +767,15 @@ export default function ChatRoomPage(): JSX.Element {
                     onKeyDown={handleKeyDown}
                     onBlur={onInputBlur}
                     onPaste={handlePaste}
+                    onCompositionStart={handleCompositionStart}
+                    onCompositionEnd={handleCompositionEnd}
+                    onBeforeInput={handleBeforeInput}
                     placeholder="메시지를 입력하세요"
                     inputMode="text"
                     autoComplete="off"
-                    autoCorrect="on"
-                    autoCapitalize="sentences"
+                    autoCorrect="off"
+                    autoCapitalize="none"
+                    enterKeyHint="send"
                 />
                 <button
                     type="button"

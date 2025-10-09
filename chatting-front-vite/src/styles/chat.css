@@ -289,7 +289,7 @@ html, body {
 .chat__row {
     position: relative;
     display: inline-block;
-    max-width: 230px;
+    max-width: 300px;
     vertical-align: bottom;
 }
 /* 내 메시지: 시간은 왼쪽 → 왼쪽 패딩으로 공간 예약, 오른쪽은 0 */
@@ -320,6 +320,12 @@ html, body {
 @media (max-width: 640px) {
     :root { --time-space: 52px; }  /* 모바일에서 공간 소폭 축소 */
     .chat__time-outside { font-size: 10.5px; }
+    .chat__row {
+        position: relative;
+        display: inline-block;
+        max-width: 250px;
+        vertical-align: bottom;
+    }
 }
 
 /* ===== Attachments ===== */
