@@ -73,4 +73,18 @@ public class FriendController {
         UUID myId = UUID.fromString(auth.getName());
         friendService.cancelByUserId(id, myId);
     }
+
+    /** 나에게 온 PENDING 요청 개수 */
+    @GetMapping("/requests/incoming/count")
+    public int incomingCount(Authentication auth) {
+        UUID myId = UUID.fromString(auth.getName());
+        return friendService.incomingPendingCountByUserId(myId);
+    }
+
+    /** 내가 보낸 PENDING 요청 개수 */
+    @GetMapping("/requests/outgoing/count")
+    public int outgoingCount(Authentication auth) {
+        UUID myId = UUID.fromString(auth.getName());
+        return friendService.outgoingPendingCountByUserId(myId);
+    }
 }

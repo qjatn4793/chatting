@@ -34,21 +34,10 @@ public interface FriendRequestRepository extends JpaRepository<FriendRequest, Lo
             FriendRequestStatus status1, String requesterEmail,
             FriendRequestStatus status2, String receiverEmail);
 
+    /** 수신자 기준 PENDING 개수 (표준 파생 쿼리) */
+    int countByReceiver_EmailAndStatus(String receiverEmail, FriendRequestStatus status);
 
-    /* ===================== (선택) UUID 기반 - 다른 코드 호환 필요 시 유지 ===================== */
+    /** 발신자 기준 PENDING 개수 (필요시 뱃지/보조지표용) */
+    int countByRequester_EmailAndStatus(String requesterEmail, FriendRequestStatus status);
 
-    List<FriendRequest> findByReceiver_IdAndStatus(UUID receiverId, FriendRequestStatus status);
-    List<FriendRequest> findByRequester_IdAndStatus(UUID requesterId, FriendRequestStatus status);
-
-    Optional<FriendRequest> findByRequester_IdAndReceiver_IdAndStatusIn(
-            UUID requesterId, UUID receiverId, List<FriendRequestStatus> statuses);
-
-    Optional<FriendRequest> findByIdAndReceiver_Id(Long id, UUID receiverId);
-
-    boolean existsByStatusAndRequester_IdAndReceiver_Id(
-            FriendRequestStatus status, UUID requesterId, UUID receiverId);
-
-    List<FriendRequest> findByStatusAndRequester_IdOrStatusAndReceiver_Id(
-            FriendRequestStatus status1, UUID requesterId,
-            FriendRequestStatus status2, UUID receiverId);
 }

@@ -311,4 +311,19 @@ public class FriendService {
         }
         return result;
     }
+
+    /** 나에게 온 PENDING 요청 개수: count 전용 쿼리 사용 */
+    @Transactional(readOnly = true)
+    public int incomingPendingCountByUserId(UUID myUserId) {
+        User me = requireUser(myUserId);
+        // 표준 파생 쿼리 사용
+        return requestRepo.countByReceiver_EmailAndStatus(me.getEmail(), FriendRequestStatus.PENDING);
+    }
+
+    /** 내가 보낸 PENDING 요청 개수 */
+    @Transactional(readOnly = true)
+    public int outgoingPendingCountByUserId(UUID myUserId) {
+        User me = requireUser(myUserId);
+        return requestRepo.countByRequester_EmailAndStatus(me.getEmail(), FriendRequestStatus.PENDING);
+    }
 }

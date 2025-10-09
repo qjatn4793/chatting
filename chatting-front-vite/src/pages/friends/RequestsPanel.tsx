@@ -18,7 +18,12 @@ type Req = {
     targetUsername?: string
 }
 
-export default function RequestsPanel(): JSX.Element {
+type Props = {
+    /** 수락/거절/취소 등 상태 변동 후 상위(벨)에서 재카운트할 때 사용 */
+    onChanged?: () => void
+}
+
+export default function RequestsPanel({ onChanged }: Props): JSX.Element {
     const [incoming, setIncoming] = useState<Req[]>([])
     const [outgoing, setOutgoing] = useState<Req[]>([])
     const [err, setErr] = useState('')
@@ -39,13 +44,11 @@ export default function RequestsPanel(): JSX.Element {
         }
     }
 
-    // 최초 로드 + 다른 패널로의 힌트 브로드캐스트 유지
     useEffect(() => {
         load()
         try { window.dispatchEvent(new CustomEvent('friends:maybe-changed')) } catch {}
     }, [])
 
-    // 실시간 구독(다중 경로) + 재연결 복구 + 포커스/가시성/온라인 복귀 + (옵션) 가벼운 폴링
     useEffect(() => {
         if (!userUuid) return
         const uid = String(userUuid)
@@ -57,17 +60,28 @@ export default function RequestsPanel(): JSX.Element {
         const subscribeAll = () => {
             const dests = [
                 `/topic/friend-requests/${uid}`,
-                `/topic/friends/${uid}`
+                `/topic/friends/${uid}`,
             ]
             dests.forEach((d) => {
-                try { unsubs.push(ws.subscribe(d, onEvent)) } catch {}
+                try {
+                    const u = ws.subscribe(d, onEvent)
+                    if (typeof u === 'function') unsubs.push(u)
+                } catch {}
             })
         }
 
         const onConnect = () => { subscribeAll(); load() }
 
-        ws.onConnect(onConnect)
-        ws.ensureConnected()
+        // onConnect 등록: 반환값이 함수인 구현만 언레지스터 보관
+        let offOnConnect: (() => void) | undefined
+        if (typeof (ws as any).onConnect === 'function') {
+            const maybe = (ws as any).onConnect(onConnect)
+            if (typeof maybe === 'function') offOnConnect = maybe
+        }
+
+        // 연결 보장 함수가 없는 구현도 있으니 존재할 때만 호출
+        try { (ws as any).ensureConnected?.() } catch {}
+
         subscribeAll()
 
         const onVisible = () => { if (document.visibilityState === 'visible') load() }
@@ -77,7 +91,7 @@ export default function RequestsPanel(): JSX.Element {
         window.addEventListener('focus', onFocus)
         window.addEventListener('online', onOnline)
 
-        // (옵션) 이벤트 누락 보정: 보이는 동안 5초마다 동기화
+        // 보이는 동안 5초마다 보정
         pollId = window.setInterval(() => {
             if (document.visibilityState === 'visible') load()
         }, 5000) as unknown as number
@@ -85,7 +99,7 @@ export default function RequestsPanel(): JSX.Element {
         return () => {
             unsubs.forEach((u) => { try { u() } catch {} })
             unsubs = []
-            try { ws.offConnect(onConnect) } catch {}
+            if (offOnConnect) { try { offOnConnect() } catch {} }
             document.removeEventListener('visibilitychange', onVisible)
             window.removeEventListener('focus', onFocus)
             window.removeEventListener('online', onOnline)
@@ -101,8 +115,8 @@ export default function RequestsPanel(): JSX.Element {
     const notifyFriendsMaybeChanged = () => {
         try {
             window.dispatchEvent(new CustomEvent('friends:maybe-changed'))
-            load().then()
         } catch {}
+        onChanged?.()   // ← 벨 배지 재계산 요청
     }
 
     const accept = async (id: Req['id']) => {
