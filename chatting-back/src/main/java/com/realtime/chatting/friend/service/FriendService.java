@@ -189,7 +189,7 @@ public class FriendService {
         FriendRequestDto dto = toDto(saved);
 
         // 이메일 기준 토픽
-        messaging.convertAndSend("/topic/friend-requests/" + meU.getId(), dto);
+        // messaging.convertAndSend("/topic/friend-requests/" + meU.getId(), dto);
         messaging.convertAndSend("/topic/friend-requests/" + tgU.getId(), dto);
         return dto;
     }
@@ -200,12 +200,9 @@ public class FriendService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "요청이 없거나 권한이 없습니다."));
         fr.setStatus(FriendRequestStatus.ACCEPTED);
 
-//        log.info("requester : {}", fr.getRequester().getId());
-//        log.info("receiver : {}", fr.getReceiver().getId());
-
         FriendRequestDto dto = toDto(fr);
-        messaging.convertAndSend("/topic/friend-requests/" + fr.getRequester().getId(), dto);
-        messaging.convertAndSend("/topic/friend-requests/" + fr.getReceiver().getId(), dto);
+        // messaging.convertAndSend("/topic/friend-requests/" + fr.getRequester().getId(), dto);
+        // messaging.convertAndSend("/topic/friend-requests/" + fr.getReceiver().getId(), dto);
         return dto;
     }
 
@@ -217,8 +214,8 @@ public class FriendService {
         FriendRequestDto dto = toDto(fr);
         requestRepo.delete(fr);
 
-        messaging.convertAndSend("/topic/friend-requests/" + fr.getRequester().getId(), dto);
-        messaging.convertAndSend("/topic/friend-requests/" + fr.getReceiver().getId(), dto);
+        // messaging.convertAndSend("/topic/friend-requests/" + fr.getRequester().getId(), dto);
+        // messaging.convertAndSend("/topic/friend-requests/" + fr.getReceiver().getId(), dto);
         return dto;
     }
 
