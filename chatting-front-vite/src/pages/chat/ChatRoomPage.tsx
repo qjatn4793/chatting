@@ -90,11 +90,19 @@ export default function ChatRoomPage(): JSX.Element {
     const albumInputRef = useRef<HTMLInputElement | null>(null)
     const fileInputRef = useRef<HTMLInputElement | null>(null)
 
+    const savedScrollYRef = useRef(0)
+
     const isMobile = useMemo(() => {
         const ua = navigator.userAgent || ''
         const touch = 'ontouchstart' in window || (navigator as any).maxTouchPoints > 0
         const mobileRe = /Android|iPhone|iPad|iPod/i.test(ua)
         return touch && mobileRe
+    }, [])
+
+    const isIOS = useMemo(() => {
+        const ua = navigator.userAgent || ''
+        const touch = 'ontouchstart' in window || (navigator as any).maxTouchPoints > 0
+        return /iPhone|iPad|iPod/i.test(ua) || (touch && /Macintosh/.test(ua))
     }, [])
 
     const listRef = useRef<HTMLDivElement | null>(null)
@@ -149,7 +157,81 @@ export default function ChatRoomPage(): JSX.Element {
         onStable: () => { if (nearBottomRef.current) scrollToBottom('auto') },
         kbThreshold: 80,
         blockDrag: true,
+        applyKbOniOS: false,      // ✅ iOS에서는 입력창 위치 보정(—kb) 끔
+        applyKbOnAndroid: true,   // ✅ AOS만 보정 적용
     })
+
+    // iOS 전용: 입력창 고정 모드 토글(자동 스크롤 억제용)
+    useEffect(() => {
+        if (!isIOS) return
+        const root = document.documentElement
+        const body = document.body
+
+        const lockBodyScroll = () => {
+            savedScrollYRef.current = window.scrollY || window.pageYOffset || 0
+            body.style.position = 'fixed'
+            body.style.top = `-${savedScrollYRef.current}px`
+            body.style.left = '0'
+            body.style.right = '0'
+            body.style.width = '100%'
+            body.style.overflow = 'hidden'
+            root.classList.add('ios-kb')
+
+            // 🔧 레이아웃이 고정되는 프레임 뒤에 바닥 한번 보정
+            requestAnimationFrame(() => {
+                if (nearBottomRef.current) scrollToBottom('auto')
+            })
+        }
+
+        const unlockBodyScroll = () => {
+            body.style.position = ''
+            body.style.top = ''
+            body.style.left = ''
+            body.style.right = ''
+            body.style.width = ''
+            body.style.overflow = ''
+            root.classList.remove('ios-kb')
+            // 원래 스크롤 위치 복원
+            window.scrollTo(0, savedScrollYRef.current || 0)
+
+            // 🔧 Safari 툴바 복원 애니메이션 끝나갈 때 한 번 더 보정
+            setTimeout(() => {
+                if (nearBottomRef.current) scrollToBottom('auto')
+            }, 180)
+        }
+
+        const onFocusIn = (e: FocusEvent) => {
+            const t = e.target as HTMLElement | null
+            if (!t) return
+            if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable) {
+                lockBodyScroll()
+            }
+        }
+        const onFocusOut = () => { setTimeout(unlockBodyScroll, 160) }
+
+        document.addEventListener('focusin', onFocusIn)
+        document.addEventListener('focusout', onFocusOut)
+        return () => {
+            document.removeEventListener('focusin', onFocusIn)
+            document.removeEventListener('focusout', onFocusOut)
+            unlockBodyScroll()
+        }
+    }, [isIOS, scrollToBottom])
+
+    // 리스트 높이 변화 → 바닥 유지(이미지/폰트/첨부 로딩 보정)
+    useEffect(() => {
+        const list = listRef.current
+        if (!list || !(window as any).ResizeObserver) return
+
+        const ro = new (window as any).ResizeObserver((entries: any) => {
+            if (nearBottomRef.current) {
+                requestAnimationFrame(() => scrollToBottom('auto'))
+            }
+        })
+        try { ro.observe(list) } catch {}
+
+        return () => { try { ro.disconnect() } catch {} }
+    }, [scrollToBottom])
 
     useEffect(() => {
         const onUp = () => setConnected(true)
@@ -196,6 +278,8 @@ export default function ChatRoomPage(): JSX.Element {
                 requestAnimationFrame(() => {
                     measureNearBottom()
                     scrollToBottom('auto')
+                    // iOS/Safari에서 한 텀 더 보정
+                    setTimeout(() => { if (nearBottomRef.current) scrollToBottom('auto') }, 60)
                 })
             } catch {}
         })()
@@ -289,17 +373,17 @@ export default function ChatRoomPage(): JSX.Element {
             setMessages((prev) => {
                 const idx = prev.findIndex((p) => p.id === msg.id);
                 if (idx === -1) {
-                    return [...prev, msg].sort((a, b) => toMillis(a.createdAt) - toMillis(b.createdAt));
+                    return [...prev, msg].sort((a, b) => toMillis(a.createdAt) - toMillis(b.createdAt))
                 }
                 const old = prev[idx];
                 const oldAtt = old.attachments?.length ?? 0;
                 const newAtt = msg.attachments?.length ?? 0;
                 const shouldReplace =
                     newAtt > oldAtt || toMillis(msg.createdAt) > toMillis(old.createdAt) || (msg.content && msg.content !== old.content);
-                if (!shouldReplace) return prev;
-                const next = prev.slice();
-                next[idx] = { ...old, ...msg };
-                return next.sort((a, b) => toMillis(a.createdAt) - toMillis(b.createdAt));
+                if (!shouldReplace) return prev
+                const next = prev.slice()
+                next[idx] = { ...old, ...msg }
+                return next.sort((a, b) => toMillis(a.createdAt) - toMillis(b.createdAt))
             })
 
             const mine = sameUser(myKeys, msg)
@@ -313,7 +397,10 @@ export default function ChatRoomPage(): JSX.Element {
         const onVisible = () => {
             if (document.visibilityState === 'visible') {
                 ws.ensureConnected()
-                if (nearBottomRef.current) scrollToBottom('auto')
+                if (nearBottomRef.current) {
+                    scrollToBottom('auto')
+                    setTimeout(() => scrollToBottom('auto'), 60) // 한 번 더 보정
+                }
             }
         }
         const onOnline = () => { ws.ensureConnected() }
@@ -517,7 +604,8 @@ export default function ChatRoomPage(): JSX.Element {
                                                         src={a.url}
                                                         alt={a.originalName || 'image'}
                                                         loading="lazy"
-                                                        className="chat__thumbImg"   // 필요시
+                                                        className="chat__thumbImg"
+                                                        onLoad={() => { if (nearBottomRef.current) scrollToBottom('auto') }}
                                                     />
                                                 </a>
                                             ))}

@@ -10,7 +10,6 @@
     display: grid;
     grid-template-columns: 1fr;          /* 모바일 기본: 단일 컬럼 */
     grid-template-rows: 1fr;            /* 콘텐츠만 */
-    min-height: 100vh;
     background: var(--app-bg, #f6f7fb);
     position: relative;                  /* BottomNav fixed 기준 */
 }
@@ -18,13 +17,6 @@
 /* 상세 화면(채팅 room): 모바일에선 사이드가 없으므로 단일 컬럼 유지 */
 .app.app--detail {
     grid-template-columns: 1fr;
-}
-
-/* 메인 영역(모바일/태블릿) */
-.app__main {
-    display: grid;
-    grid-template-rows: var(--topbar-h) 1fr;
-    min-width: 0;
 }
 
 /* 상단 바 */
@@ -45,10 +37,10 @@
 .app__topbar__right { display: flex; align-items: center; gap: 8px; }
 
 /* 본문(모바일/태블릿): bottomnav에 가리지 않게 패딩 */
-.app__content {
-    width: 100%;
-    padding-bottom: calc(var(--bottomnav-h) + 12px);
-}
+/*.app__content {*/
+/*    width: 100%;*/
+/*    padding-bottom: calc(var(--bottomnav-h) + 12px);*/
+/*}*/
 
 .app__content--nopad {
     padding-bottom: 0;

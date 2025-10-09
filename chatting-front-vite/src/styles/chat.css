@@ -39,8 +39,8 @@ html, body {
 .chat {
     display: flex;
     flex-direction: column;
-    height: var(--vvh);
-    min-height: var(--vvh);
+    height: 100svh;
+    min-height: 100svh;
     overflow: hidden;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
@@ -89,6 +89,7 @@ html, body {
 /* ===== Message List ===== */
 .chat__list {
     flex: 1 1 auto;
+    height: calc(var(--vvh, 100dvh) - 56px);
     min-height: 0;
     overflow: auto;
     padding: 16px 18px; /* 입력바 + 여유 */
@@ -98,11 +99,12 @@ html, body {
     -webkit-overflow-scrolling: touch;
     overscroll-behavior: contain;
     scroll-behavior: auto;
+    overflow-anchor: none; /* Safari 자동 앵커링 끔(점프 방지) */
 }
 
 /* 키보드가 열리면 하단 여백을 키보드 높이만큼 추가 확보 */
 .kb-open .chat__list {
-    padding-bottom: calc(var(--input-h) + 32px + var(--kb) + env(safe-area-inset-bottom, 0px));
+    padding-bottom: calc(16px + var(--input-h) + var(--kb) + env(safe-area-inset-bottom, 0px));
 }
 
 /* ===== Message Item (left/right alignment) ===== */
@@ -110,7 +112,7 @@ html, body {
     align-self: flex-start;
     display: grid;
     grid-template-columns: 1fr;
-    max-width: min(720px, 92%);
+    max-width: min(520px, 92%);
     row-gap: 6px;
     padding: 2px 0;
     text-align: left;
@@ -287,7 +289,7 @@ html, body {
 .chat__row {
     position: relative;
     display: inline-block;
-    max-width: 300px;
+    max-width: 230px;
     vertical-align: bottom;
 }
 /* 내 메시지: 시간은 왼쪽 → 왼쪽 패딩으로 공간 예약, 오른쪽은 0 */
