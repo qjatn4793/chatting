@@ -11,4 +11,5 @@ import lombok.Setter;
 @AllArgsConstructor
 public class SendMessageRequest {
     private String message;
+    private Boolean toAI;
 }

@@ -5,9 +5,9 @@ import java.time.ZoneOffset;
 import java.util.*;
 import java.util.stream.Collectors;
 
+import com.realtime.chatting.ai.service.AiChatService;
 import com.realtime.chatting.chat.dto.AttachmentDto;
 import com.realtime.chatting.chat.repository.ChatRoomMemberRepository;
-import com.realtime.chatting.storage.entity.ChatAttachment;
 import com.realtime.chatting.storage.repository.ChatAttachmentRepository;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -27,7 +27,6 @@ public class MessageService {
     private final ChatMessageRepository messageRepo;
     private final ChatRoomMemberRepository memberRepo;
     private final ChatAttachmentRepository attachmentRepo;
-
 
     @Transactional(readOnly = true)
     public List<MessageDto> history(String roomId, int limit, @Nullable Instant before) {
@@ -92,26 +91,63 @@ public class MessageService {
         return dtosAsc;
     }
 
-    public MessageDto save(String roomId, String messageId, String username, String sender, String content) {
+    // ─────────────────────────────────────────────────────────────────────────────
+    //    "사람"이 보낸 메시지 저장 + 이벤트 발행 (AI 트리거)
+    //    - messageId는 서버에서 생성(UUID)
+    // ─────────────────────────────────────────────────────────────────────────────
+    @Transactional
+    public MessageDto createUserMessage(String roomId, String messageId, String username, String sender, String content) {
+
         ChatMessage m = ChatMessage.builder()
-            .roomId(roomId)
-            .messageId(messageId)
-            .sender(sender)
-            .username(username)
-            .content(content)
-            .createdAt(Instant.now())
-            .build();
+                .roomId(roomId)
+                .messageId(messageId)
+                .sender(sender)
+                .username(username)
+                .content(content)
+                .createdAt(Instant.now())
+                .build();
+
         m = messageRepo.save(m);
+
         return MessageDto.builder()
-            .id(m.getId())
-            .roomId(roomId)
-            .messageId(UUID
-            .fromString(messageId))
-            .sender(sender)
-            .username(username)
-            .content(content)
-            .createdAt(m.getCreatedAt())
-            .build();
+                .id(m.getId())
+                .roomId(roomId)
+                .messageId(UUID.fromString(messageId))
+                .sender(sender)
+                .username(username)
+                .content(content)
+                .createdAt(m.getCreatedAt())
+                .build();
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    //    "AI"가 보낸 메시지 저장 (이벤트 발행 없음)
+    //    - agentId: 내부 식별자(예: 'ai_eng_tutor'), displayName: 사용자가 볼 이름
+    // ─────────────────────────────────────────────────────────────────────────────
+    @Transactional
+    public MessageDto createAiMessage(String roomId, String agentId, String displayName, String content) {
+        String messageId = UUID.randomUUID().toString();
+
+        ChatMessage m = ChatMessage.builder()
+                .roomId(roomId)
+                .messageId(messageId)
+                .sender(agentId)          // sender에 agentId 저장
+                .username(displayName)    // 표시명
+                .content(content)
+                .createdAt(Instant.now())
+                .build();
+
+        m = messageRepo.save(m);
+
+        return MessageDto.builder()
+                .id(m.getId())
+                .roomId(roomId)
+                .messageId(UUID.fromString(messageId))
+                .sender(agentId)
+                .username(displayName)
+                .content(content)
+                .createdAt(m.getCreatedAt())
+                .build();
     }
 
     /** 주어진 roomIds 중 "나"가 구성원인 방만 필터링 후 각 방의 최신 메시지 1건씩 반환 */

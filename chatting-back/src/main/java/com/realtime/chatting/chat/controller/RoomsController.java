@@ -3,26 +3,29 @@ package com.realtime.chatting.chat.controller;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+import com.realtime.chatting.ai.repository.RoomAiMemberRepository;
+import com.realtime.chatting.ai.service.AiChatService;
 import com.realtime.chatting.chat.dto.*;
+import com.realtime.chatting.chat.service.ChatFanoutService;
 import com.realtime.chatting.chat.service.MessageService;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
 import com.realtime.chatting.chat.service.RoomService;
-import com.realtime.chatting.config.RabbitConfig;
 import com.realtime.chatting.friend.service.FriendService;
 import com.realtime.chatting.login.entity.User;
 import com.realtime.chatting.login.repository.UserRepository;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+
+import static com.realtime.chatting.ai.util.MentionUtil.hasAiMention;
+import static com.realtime.chatting.ai.util.MentionUtil.stripOneAiMention;
 
 @RestController
 @RequestMapping("/api/rooms")
@@ -31,9 +34,14 @@ public class RoomsController {
 
     private final RoomService roomService;
     private final MessageService messageService;
-    private final RabbitTemplate rabbitTemplate;
     private final FriendService friendService;
     private final UserRepository userRepository;
+
+    private final AiChatService aiChatService;
+    private final RoomAiMemberRepository roomAiMemberRepository;
+
+    // 브로커 퍼블리시를 비동기로 처리하는 서비스
+    private final ChatFanoutService chatFanoutService;
 
     /** 내 방 목록 (주체: JWT sub = UUID) */
     @GetMapping
@@ -118,7 +126,7 @@ public class RoomsController {
         String username = me.getUsername();
         String messageId = UUID.randomUUID().toString();
 
-        MessageDto saved = messageService.save(
+        MessageDto saved = messageService.createUserMessage(
                 roomId,
                 messageId,
                 username,
@@ -126,9 +134,19 @@ public class RoomsController {
                 req.getMessage()
         );
 
-        // RabbitMQ publish
-        String routingKey = "chat.message.room." + roomId;
-        rabbitTemplate.convertAndSend(RabbitConfig.CHAT_EXCHANGE, routingKey, saved);
+        // @ai 멘션이 있으면 AI 라우팅
+        if (hasAiMention(req.getMessage())) {
+            // 룸에 AI가 없으면 스킵
+            boolean hasAiInRoom = !roomAiMemberRepository.findByIdRoomId(roomId).isEmpty();
+            if (hasAiInRoom) {
+                String cleaned = stripOneAiMention(req.getMessage());
+                // onHumanMessage는 @Async로 선언해두면 요청을 막지 않습니다.
+                aiChatService.onHumanMessage(roomId, cleaned);
+            }
+        }
+
+        // 브로커 퍼블리시는 비동기로(채팅 UX를 블로킹하지 않음)
+        chatFanoutService.publishToBrokerAsync(roomId, saved);
 
         return saved;
     }

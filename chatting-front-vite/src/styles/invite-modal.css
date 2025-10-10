@@ -11,7 +11,9 @@
     --im-danger-bd: #fecaca;
     --im-danger-fg: #b91c1c;
     --im-radius: 12px;
-    --im-shadow: 0 12px 32px rgba(0,0,0,.2);
+    --im-shadow: 0 12px 32px rgba(0,0,0,.18);
+    --im-panel: #f9fafb;
+    --im-panel-2: #f3f4f6;
 }
 
 /* ==== Backdrop & modal shell ==================================================== */
@@ -27,15 +29,17 @@
 }
 
 .modal {
-    width: min(520px, 92vw);
-    max-height: 80vh;
+    width: min(560px, 92vw);
+    max-height: 82vh;
     background: var(--im-bg);
     color: var(--im-fg);
     box-shadow: var(--im-shadow);
     display: flex;
     flex-direction: column;
-    transform: translateY(6px) scale(.98);
+    border-radius: var(--im-radius);
+    transform: translateY(6px) scale(.985);
     animation: im-pop 160ms cubic-bezier(.2,.8,.2,1) forwards;
+    overflow: hidden;
 }
 
 /* ==== Sections ================================================================= */
@@ -53,6 +57,7 @@
     border-bottom: 0;
     border-top: 1px solid var(--im-border);
     justify-content: flex-end;
+    background: #fff;
 }
 
 .modal__body {
@@ -60,6 +65,7 @@
     overflow: auto;
     flex: 1;
     overscroll-behavior: contain;
+    scrollbar-gutter: stable both-edges;
 }
 
 .modal__error {
@@ -74,17 +80,40 @@
 /* ==== Close button ============================================================== */
 .modal__close {
     appearance: none;
-    border: 0;
-    background: black;
+    border: 1px solid var(--im-border);
+    background: #fff;
     width: 32px; height: 32px;
     border-radius: 8px;
     cursor: pointer;
     display: grid; place-items: center;
+    line-height: 1;
 }
 .modal__close:hover { background: #f8fafc; }
-.modal__close:focus-visible {
-    outline: 2px solid var(--im-primary);
-    outline-offset: 2px;
+.modal__close:active { transform: translateY(1px); }
+.modal__close:focus-visible { outline: 2px solid var(--im-primary); outline-offset: 2px; }
+
+/* ==== Tabs ===================================================================== */
+.modal__tabs {
+    display: flex; gap: 8px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--im-border);
+    background: #fff;
+}
+.modal__tab {
+    padding: 8px 12px;
+    border: 1px solid var(--im-border);
+    border-radius: 10px;
+    background: var(--im-panel);
+    color: #1f2937;
+    cursor: pointer;
+    transition: background-color .15s ease, border-color .15s ease, transform .02s;
+}
+.modal__tab:hover { background: var(--im-panel-2); }
+.modal__tab:active { transform: translateY(1px); }
+.modal__tab.is-active {
+    background: #eef2ff;
+    border-color: #c7d2fe;
+    color: #111827;
 }
 
 /* ==== Toolbar / helpers ========================================================= */
@@ -92,24 +121,74 @@
 .muted { color: var(--im-muted); font-size: 12px; }
 
 .chk { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; }
-.chk input[type="checkbox"] { width: 16px; height: 16px; }
+.chk input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--im-primary); }
 @supports selector(:has(*)) {
     .chk:has(input[type="checkbox"]:focus-visible) { outline: 2px solid var(--im-primary); outline-offset: 2px; }
 }
-/* 브라우저가 지원하면 체크박스 색상 */
-.chk input[type="checkbox"] { accent-color: var(--im-primary); }
 
 /* ==== Friend list =============================================================== */
 .friendlist { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .friendlist__item {
     border: 1px solid var(--im-border);
     border-radius: 10px;
-    padding: 8px 10px;
+    padding: 10px 12px;
     transition: border-color .15s ease, background-color .15s ease;
+    background: #fff;
 }
 .friendlist__item:hover { border-color: #cdd3df; background: #fafafa; }
 .friendlist__name { font-weight: 600; }
 .friendlist__sub { margin-left: 8px; color: var(--im-muted); font-size: 12px; }
+.badge { display: inline-block; padding: 2px 6px; font-size: 11px; border-radius: 999px; border: 1px solid var(--im-border); }
+.badge--muted { color: var(--im-muted); background: #f8fafc; }
+
+/* ==== AI search & list ========================================================== */
+.ai__searchbar {
+    display: flex; gap: 8px; margin-bottom: 10px;
+}
+.ai__searchbar input {
+    flex: 1;
+    border: 1px solid var(--im-border);
+    border-radius: 10px;
+    padding: 8px 10px;
+    background: #fff;
+}
+.ai__searchbar button {
+    padding: 8px 12px;
+    border: 1px solid var(--im-border);
+    border-radius: 10px;
+    background: #fff;
+    cursor: pointer;
+}
+.ai__searchbar button:hover { background: #f8fafc; }
+
+.ailist {
+    list-style: none; margin: 0; padding: 0;
+    display: flex; flex-direction: column; gap: 10px;
+    max-height: 48vh; overflow: auto;
+}
+.ailist__item {
+    border: 1px solid var(--im-border);
+    border-radius: 12px;
+    padding: 10px 12px;
+    background: #fff;
+    transition: border-color .15s ease, background-color .15s ease;
+}
+.ailist__item:hover { border-color: #cdd3df; background: #fafafa; }
+
+.ai__meta { display: flex; gap: 12px; align-items: flex-start; }
+.ai__avatar {
+    width: 40px; height: 40px;
+    border-radius: 10px;
+    background: #f1f5f9;
+    overflow: hidden; display: flex; align-items: center; justify-content: center;
+    flex: 0 0 40px;
+}
+.ai__avatar img { width: 100%; height: 100%; object-fit: cover; }
+.ai__fallback { font-size: 12px; color: #334155; }
+.ai__name { font-weight: 700; }
+.ai__desc { font-size: 13px; color: #6b7280; margin-top: 2px; }
+.ai__tags { margin-top: 6px; display: flex; gap: 6px; flex-wrap: wrap; }
+.tag { font-size: 12px; background: #f3f4f6; border: 1px solid #e5e7eb; border-radius: 8px; padding: 2px 6px; }
 
 /* ==== Buttons ================================================================== */
 .btn {
@@ -133,15 +212,49 @@
 }
 .btn--primary:hover { background: var(--im-primary-press); border-color: var(--im-primary-press); }
 
+/* ==== Pagination ================================================================ */
+.invite__pager {
+    display: flex; align-items: center; justify-content: center; gap: 12px; padding: 10px;
+}
+.invite__pager button {
+    padding: 6px 10px;
+    border: 1px solid var(--im-border);
+    border-radius: 10px;
+    background: #fff;
+    cursor: pointer;
+}
+.invite__pager button:hover { background: #f8fafc; }
+.invite__pager span { font-size: 12px; color: var(--im-muted); }
+
 /* ==== Animations ================================================================ */
-@keyframes im-fade-in {
-    from { opacity: 0; } to { opacity: 1; }
-}
-@keyframes im-pop {
-    to { transform: translateY(0) scale(1); }
-}
+@keyframes im-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes im-pop { to { transform: translateY(0) scale(1); } }
 
 /* ==== Mobile polish ============================================================= */
 @supports (padding: max(0px)) {
     .modal { margin: max(12px, env(safe-area-inset-top)) 0 max(12px, env(safe-area-inset-bottom)); }
+}
+.modal__body::-webkit-scrollbar { width: 10px; }
+.modal__body::-webkit-scrollbar-thumb { background: #e5e7eb; border-radius: 10px; }
+.modal__body::-webkit-scrollbar-thumb:hover { background: #d1d5db; }
+
+/* ==== Optional: dark scheme ===================================================== */
+@media (prefers-color-scheme: dark) {
+    :root {
+        --im-bg: #0b1220;
+        --im-fg: #e5eefb;
+        --im-border: #24314a;
+        --im-muted: #90a4c7;
+        --im-panel: #121b2d;
+        --im-panel-2: #18233a;
+        --im-shadow: 0 12px 32px rgba(0,0,0,.6);
+    }
+    .modal__footer, .modal__tabs { background: var(--im-bg); }
+    .friendlist__item, .ailist__item, .ai__searchbar input, .ai__searchbar button, .btn, .modal__close {
+        background: #0f182a; border-color: var(--im-border); color: var(--im-fg);
+    }
+    .friendlist__item:hover, .ailist__item:hover, .btn:hover, .ai__searchbar button:hover { background: #121b2d; }
+    .tag { background: #142036; border-color: #24314a; color: #c7d2fe; }
+    .modal__body::-webkit-scrollbar-thumb { background: #24314a; }
+    .modal__body::-webkit-scrollbar-thumb:hover { background: #2d3b5a; }
 }
