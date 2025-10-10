@@ -416,12 +416,6 @@ export default function ChatRoomPage(): JSX.Element {
     }
     const handleCompositionEnd: React.CompositionEventHandler<HTMLInputElement> = () => {
         composingRef.current = false
-        if (sentJustNowRef.current) {
-            sentJustNowRef.current = false
-            setText('')
-            const el = inputRef.current
-            if (el) el.value = ''
-        }
     }
     const handleBeforeInput: React.FormEventHandler<HTMLInputElement> = (e: any) => {
         // 전송 직후 늦게 들어오는 insertFromComposition 무시
@@ -442,13 +436,6 @@ export default function ChatRoomPage(): JSX.Element {
             await RoomsAPI.send(roomId, { message: body })
 
             setText('')
-
-            // 다음 프레임에 포커스 복원(스크롤 점프 방지)
-            requestAnimationFrame(() => {
-                inputRef.current?.focus({ preventScroll: true })
-                // 유령 커밋 플래그 해제
-                setTimeout(() => { sentJustNowRef.current = false }, 0)
-            })
 
             setTimeout(() => scrollToBottom('smooth'), 10)
         } catch {}
