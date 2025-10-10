@@ -623,7 +623,6 @@ export default function ChatRoomPage(): JSX.Element {
                                                         alt={a.originalName || 'image'}
                                                         loading="lazy"
                                                         className="chat__thumbImg"
-                                                        onLoad={() => { if (nearBottomRef.current) scrollToBottom('auto') }}
                                                     />
                                                 </a>
                                             ))}
