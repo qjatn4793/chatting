@@ -27,7 +27,7 @@ Spring Boot + React Vite 기반의 **JWT 인증 + RMQ WebSocket(STOMP)** 실시�
 
 ### Infra
 - Docker Compose
-    - `mariadb:10.11`
+    - `MySQL 8`
     - `rabbitmq:management`
     - `redis:7`
 
@@ -130,7 +130,7 @@ sequenceDiagram
     Note over U,FE: 로그인
     U->>FE: 이메일/비밀번호 입력
     FE->>API: POST /auth/login {email, password}
-    API->>DB: 사용자 검증(+옵션: refresh 저장/블랙리스트 관리)
+    API->>DB: 사용자 검증(+옵션: refresh 저장)
     API-->>FE: 200 OK {accessToken, refreshToken, exp}
     FE->>FE: access/refresh를 localStorage에 저장<br/>AuthContext 업데이트
 
@@ -192,7 +192,7 @@ stateDiagram-v2
 
 ## 👥 친구 요청 플로우 (요청/수락/거절/취소)
 
-### 상태 전이
+### 친구요청
 ```mermaid
 stateDiagram-v2
     [*] --> NONE
