@@ -21,7 +21,7 @@ Spring Boot + React Vite 기반의 **JWT 인증 + RMQ WebSocket(STOMP)** 실시�
 - Spring Boot 3.x
 - Spring Security + JWT + Refresh Token
 - Spring WebSocket + STOMP + RabbitMQ
-- Spring Data JPA + MariaDB 10.11
+- Spring Data JPA + MySQL 8
 - Redis (세션/토큰/캐싱)
 - Gradle 8.x, Java 17
 
@@ -125,7 +125,7 @@ sequenceDiagram
     actor U as 사용자
     participant FE as Frontend (AuthContext + Axios)
     participant API as Backend API
-    participant DB as MariaDB/Redis (옵션)
+    participant DB as MySQL8/Redis (옵션)
     
     Note over U,FE: 로그인
     U->>FE: 이메일/비밀번호 입력
@@ -215,7 +215,7 @@ sequenceDiagram
     participant API as Backend API
     participant MQ as RabbitMQ
     participant WS as WebSocket(STOMP)
-    participant DB as MariaDB
+    participant DB as MySQL8
 
     Note over A,B: 모든 REST 요청은 Authorization: Bearer <accessToken>
 
@@ -270,7 +270,7 @@ sequenceDiagram
     actor U as 사용자(보낸 사람)
     participant FE as Frontend
     participant API as Backend API
-    participant DB as MariaDB
+    participant DB as MySQL8
     participant MQ as RabbitMQ
     participant WS as WebSocket(STOMP)
     actor M as 멤버들(같은 방의 다른 사용자들)
@@ -307,7 +307,7 @@ sequenceDiagram
     participant FE as Frontend
     participant ST as Storage(S3 or /files)
     participant API as Backend API
-    participant DB as MariaDB
+    participant DB as MySQL8
     participant MQ as RabbitMQ
     participant WS as WebSocket(STOMP)
     actor M as 멤버들(같은 방의 다른 사용자들)
@@ -418,7 +418,7 @@ CREATE INDEX idx_chat_room_member_user
 ---
 
 ## 사용 기술
-- Backend & Infra: Spring Boot, JPA, Redis, RabbitMQ, MariaDB
+- Backend & Infra: Spring Boot, JPA, Redis, RabbitMQ, MySQL 8
 - Frontend: React, Vite, TypeScript
 
 👤 작성자 : 김범수
